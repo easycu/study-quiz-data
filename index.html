@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#1e1e2e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="공부 로그라이크">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+<title>STUDY ROGUELIKE</title>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- 게임 중 일시정지 버튼 -->
+<button id="pauseBtn" class="hidden" aria-label="일시정지">II</button>
+
+<!-- 메인 메뉴 -->
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1>STUDY ROGUELIKE</h1>
+    <button id="btnStart" class="big">GAME START</button>
+    <button id="btnSync">문제 새로 받기</button>
+    <button id="btnRanking">랭킹</button>
+    <button id="btnSettings">설정</button>
+    <p id="syncStatus" class="status">문제를 불러오는 중...</p>
+    <p class="hint">이동: 화면을 누르고 끌기(조이패드) · 키보드 방향키/WASD<br>문제: O/X를 누르고 '확인' · 키보드 ←(O) →(X) Enter</p>
+  </div>
+</div>
+
+<!-- 랭킹 -->
+<div id="ranking" class="overlay hidden">
+  <div class="panel wide">
+    <h2>🏆 랭킹 (최고 점수)</h2>
+    <div class="scroll"><table id="rankTable"></table></div>
+    <button class="back">돌아가기</button>
+  </div>
+</div>
+
+<!-- 총 설정 -->
+<div id="settings" class="overlay hidden">
+  <div class="panel wide">
+    <h2>설정 - 총 성능</h2>
+    <p class="hint">각 칸에 숫자만 입력하세요 (%는 빼고). 바람은 관통하는 적 마릿수입니다.</p>
+    <div class="scroll"><table id="gunTable" class="settings"></table></div>
+    <p id="settingsMsg" class="status"></p>
+    <div class="row">
+      <button id="btnSettingsSave">저장</button>
+      <button id="btnSettingsDefault">기본값으로</button>
+      <button class="back">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 게임 오버 후 이름 입력 -->
+<div id="nameEntry" class="overlay hidden">
+  <div class="panel">
+    <h2>게임 오버</h2>
+    <p id="finalScore"></p>
+    <p>랭킹에 남길 이름을 입력하세요</p>
+    <input id="nameInput" maxlength="12" placeholder="Player" autocomplete="off" enterkeyhint="done">
+    <div class="row">
+      <button id="btnNameSave">저장</button>
+      <button id="btnNameSkip">건너뛰기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 일시정지 -->
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>일시정지</h2>
+    <button id="btnResume" class="big">계속하기</button>
+    <button id="btnQuit">메인 메뉴로 (기록 안 함)</button>
+  </div>
+</div>
+
+<!-- 세로 화면 안내 -->
+<div id="rotateHint" class="hidden">휴대폰을 <b>가로</b>로 돌리면 더 크게 보여요</div>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/world.js"></script>
+<script src="js/render.js"></script>
+<script src="js/input.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

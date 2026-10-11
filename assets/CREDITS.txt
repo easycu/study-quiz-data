@@ -1,0 +1,22 @@
+이 폴더(assets/)의 캐릭터 및 몬스터 이미지 출처
+====================================================
+
+원작: "Ninja Adventure Asset Pack" by Pixel-boy and AAA
+      https://pixel-boy.itch.io/ninja-adventure-asset-pack
+      라이선스: CC0 (Creative Commons Zero) — 저작자 표시 없이 자유롭게 사용 가능
+      (상업적 이용 포함, 원작자는 "표시해주면 고맙지만 필수는 아님"이라고 명시함)
+
+이 이미지들은 위 에셋팩을 사용한 공개 튜토리얼 프로젝트에서 가져왔습니다:
+      clear-code-projects/zelda (GitHub, CC0 라이선스)
+      https://github.com/clear-code-projects/zelda
+
+사용한 스프라이트:
+  - assets/player/   : 플레이어 캐릭터 (상/하/좌/우 방향별 걷기 4프레임 + 대기 1프레임)
+  - assets/monsters/bamboo/  : 근접(추격) 몬스터용
+  - assets/monsters/squid/   : 근접(돌진) 몬스터용
+  - assets/monsters/spirit/  : 원거리(단발/사선/연속) 몬스터용
+  - assets/monsters/raccoon/ : 보스 몬스터용 (원본 중 가장 크고 강한 몬스터)
+
+모두 CC0 라이선스이므로 자유롭게 수정/재배포해도 됩니다.
+PyInstaller로 패키징할 때는 이 assets 폴더 전체를 함께 포함해야 합니다
+(아래 "PyInstaller 빌드 방법" 참고 - study_roguelike.py 상단 주석에도 적어둠).
