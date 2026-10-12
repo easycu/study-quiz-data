@@ -32,7 +32,23 @@
 
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 20px; }
   #question { font-size: clamp(20px, 5.2vw, 27px); line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; white-space: pre-wrap; }
-  .card img { display: block; max-width: 100%; max-height: 45vh; margin: 12px auto 0; border-radius: 8px; background: #fff; }
+  /* 이미지 + 바로 옆 돋보기 버튼 */
+  .imgwrap { display: flex; align-items: flex-start; justify-content: center; gap: 8px; margin: 12px 0 0; }
+  .imgwrap img { display: block; min-width: 0; max-width: calc(100% - 54px); max-height: 45vh; object-fit: contain;
+    border-radius: 8px; background: #fff; cursor: zoom-in; }
+  .zoombtn { flex: none; width: 46px; height: 46px; padding: 0; font-size: 22px; border-radius: 12px;
+    background: var(--btn); border: 2px solid var(--line); }
+  #explain:not(:empty) { margin-top: 12px; }
+  #eimgWrap + #explain { margin-top: 14px; }
+  /* 이미지 크게 보기 */
+  #zoomView { position: fixed; inset: 0; z-index: 20; background: rgba(5, 5, 9, 0.96); touch-action: none; }
+  #zoomStage { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; }
+  #zoomImg { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; background: #fff;
+    border-radius: 4px; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+  #zoomClose { position: absolute; top: max(10px, env(safe-area-inset-top)); right: 10px; width: 52px; height: 52px;
+    padding: 0; font-size: 24px; border-radius: 12px; background: rgba(40, 40, 60, 0.85); color: #fff; z-index: 2; }
+  #zoomHint { position: absolute; left: 0; right: 0; bottom: max(6px, env(safe-area-inset-bottom)); margin: 0;
+    text-align: center; color: #9a9ab8; font-size: 12px; pointer-events: none; }
 
   .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   button { font: inherit; color: var(--text); background: var(--btn); border: 2px solid var(--line);
@@ -68,7 +84,10 @@
   <div id="quiz" class="hidden">
     <div class="card" style="margin-bottom:14px">
       <div id="question"></div>
-      <img id="qimg" class="hidden" alt="문제 이미지">
+      <div id="qimgWrap" class="imgwrap hidden">
+        <img id="qimg" alt="문제 이미지">
+        <button class="zoombtn" type="button" data-for="qimg" aria-label="크게 보기">🔍</button>
+      </div>
     </div>
     <div class="choices" style="margin-bottom:14px">
       <button id="btnO" class="choice" type="button">O</button>
@@ -77,12 +96,21 @@
     <button id="action" type="button" style="width:100%" disabled>확인</button>
     <div id="explainCard" class="card hidden" style="margin-top:14px">
       <p id="result"></p>
+      <div id="eimgWrap" class="imgwrap hidden">
+        <img id="eimg" alt="해설 이미지">
+        <button class="zoombtn" type="button" data-for="eimg" aria-label="크게 보기">🔍</button>
+      </div>
       <div id="explain"></div>
-      <img id="eimg" class="hidden" alt="해설 이미지">
     </div>
-    <p class="keys">키보드: ← O &nbsp; → X &nbsp; Enter 확인 / 다음 문제</p>
+    <p class="keys">키보드: ← O &nbsp; → X &nbsp; Enter 확인 / 다음 문제 &nbsp; Z 이미지 크게 보기</p>
   </div>
 </main>
+
+<div id="zoomView" class="hidden">
+  <div id="zoomStage"><img id="zoomImg" alt="확대 이미지" draggable="false"></div>
+  <button id="zoomClose" type="button" aria-label="닫기">✕</button>
+  <p id="zoomHint">두 손가락으로 벌려 더 확대 · 두 번 톡 = 확대/원래대로 · ✕로 닫기</p>
+</div>
 
 <script>
 "use strict";
@@ -152,8 +180,9 @@ async function load() {
 }
 
 function setImg(el, src) {
-  if (src) { el.src = src; el.classList.remove("hidden"); }
-  else { el.removeAttribute("src"); el.classList.add("hidden"); }
+  const wrap = el.parentElement;
+  if (src) { el.src = src; wrap.classList.remove("hidden"); }
+  else { el.removeAttribute("src"); wrap.classList.add("hidden"); }
 }
 function next() {
   if (!deck.length) {
@@ -188,7 +217,8 @@ function submit() {
   const r = $("result");
   r.textContent = right ? `정답! (${current.correct})` : `오답 — 정답은 ${current.correct}`;
   r.className = right ? "ok" : "bad";
-  $("explain").textContent = current.explanation || "(해설 없음)";
+  // 해설: 이미지가 있으면 이미지를 먼저, 그 밑에 추가 설명 글
+  $("explain").textContent = current.explanation || (current.eimg ? "" : "(해설 없음)");
   setImg($("eimg"), current.eimg);
   $("explainCard").classList.remove("hidden");
   $("action").textContent = "다음 문제";
@@ -203,8 +233,146 @@ $("btnO").onclick = () => pick("O");
 $("btnX").onclick = () => pick("X");
 $("action").onclick = action;
 $("reload").onclick = load;
+// ---------- 이미지 크게 보기 ----------
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const hypot = Math.hypot;
+const ZoomView = {
+    isOpen: false,
+    onClose: null,
+    _img: null, _stage: null,
+    _fit: 1, _z: 1, _x: 0, _y: 0,          // 화면 맞춤 배율, 추가 확대 배율, 이미지 왼쪽 위 위치(px)
+    _ptrs: new Map(), _lastTap: null, _moved: 0,
+
+    init() {
+        this._view = document.getElementById("zoomView");
+        this._stage = document.getElementById("zoomStage");
+        this._img = document.getElementById("zoomImg");
+        this._img.style.left = "0px"; this._img.style.top = "0px";
+        document.getElementById("zoomClose").addEventListener("click", e => { e.stopPropagation(); this.close(); });
+        const st = this._stage;
+        st.addEventListener("pointerdown", e => this._down(e));
+        st.addEventListener("pointermove", e => this._move(e));
+        st.addEventListener("pointerup", e => this._up(e));
+        st.addEventListener("pointercancel", e => this._up(e));
+        st.addEventListener("wheel", e => {
+            e.preventDefault();
+            this._zoomAt(e.clientX, e.clientY, this._z * Math.exp(-e.deltaY * 0.0015));
+        }, { passive: false });
+        ["touchstart", "touchmove", "touchend"].forEach(t =>
+            st.addEventListener(t, e => e.preventDefault(), { passive: false }));
+        // 열려 있는 동안 키보드는 게임에 넘기지 않는다
+        window.addEventListener("keydown", e => {
+            if (!this.isOpen) return;
+            e.preventDefault(); e.stopImmediatePropagation();
+            if (["Escape", "Enter", "NumpadEnter", "Space", "KeyZ"].includes(e.code)) this.close();
+        }, true);
+        window.addEventListener("resize", () => { if (this.isOpen) this._reset(); });
+    },
+
+    open(src, onClose) {
+        if (!src) return;
+        if (!this._img) this.init();
+        this.onClose = onClose || null;
+        this.isOpen = true;
+        this._view.classList.remove("hidden");
+        this._ptrs.clear();
+        const img = this._img;
+        img.onload = () => this._reset();
+        img.src = src;
+        if (img.complete && img.naturalWidth) this._reset();
+    },
+    close() {
+        if (!this.isOpen) return;
+        this.isOpen = false;
+        this._view.classList.add("hidden");
+        this._ptrs.clear();
+        const cb = this.onClose; this.onClose = null;
+        if (cb) cb();
+    },
+
+    _reset() {
+        const img = this._img, vw = this._stage.clientWidth, vh = this._stage.clientHeight;
+        if (!img.naturalWidth) return;
+        img.style.width = img.naturalWidth + "px"; img.style.height = img.naturalHeight + "px";
+        // 화면에 꽉 차게 (작은 이미지는 최대 4배까지 키움)
+        this._fit = Math.min((vw * 0.96) / img.naturalWidth, (vh * 0.86) / img.naturalHeight, 4);
+        this._z = 1;
+        this._x = (vw - img.naturalWidth * this._fit) / 2;
+        this._y = (vh - img.naturalHeight * this._fit) / 2;
+        this._apply();
+    },
+    _apply() {
+        const img = this._img, vw = this._stage.clientWidth, vh = this._stage.clientHeight;
+        const s = this._fit * this._z, w = img.naturalWidth * s, h = img.naturalHeight * s;
+        // 화면보다 작으면 가운데, 크면 빈 곳이 안 생기게 이동 범위 제한
+        this._x = w <= vw ? (vw - w) / 2 : clamp(this._x, vw - w, 0);
+        this._y = h <= vh ? (vh - h) / 2 : clamp(this._y, vh - h, 0);
+        img.style.transform = `translate(${this._x}px, ${this._y}px) scale(${s})`;
+    },
+    _local(cx, cy) { const r = this._stage.getBoundingClientRect(); return [cx - r.left, cy - r.top]; },
+    _zoomAt(cx, cy, newZ) {
+        newZ = clamp(newZ, 1, 6);
+        const [px, py] = this._local(cx, cy), k = newZ / this._z;
+        this._x = px - (px - this._x) * k;
+        this._y = py - (py - this._y) * k;
+        this._z = newZ;
+        this._apply();
+    },
+
+    _down(e) {
+        e.preventDefault();
+        try { this._stage.setPointerCapture(e.pointerId); } catch (_) { /* 무시 */ }
+        this._ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (this._ptrs.size === 1) this._moved = 0;
+    },
+    _move(e) {
+        const p = this._ptrs.get(e.pointerId);
+        if (!p) return;
+        e.preventDefault();
+        if (this._ptrs.size === 1) {
+            this._x += e.clientX - p.x; this._y += e.clientY - p.y;
+            this._moved += Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y);
+            p.x = e.clientX; p.y = e.clientY;
+            this._apply();
+            return;
+        }
+        // 두 손가락: 벌린 만큼 확대 + 가운데가 움직인 만큼 이동
+        const [a, b] = [...this._ptrs.values()];
+        const oldD = hypot(a.x - b.x, a.y - b.y), oldMx = (a.x + b.x) / 2, oldMy = (a.y + b.y) / 2;
+        p.x = e.clientX; p.y = e.clientY;
+        const [a2, b2] = [...this._ptrs.values()];
+        const newD = hypot(a2.x - b2.x, a2.y - b2.y), mx = (a2.x + b2.x) / 2, my = (a2.y + b2.y) / 2;
+        this._moved += 100;
+        this._x += mx - oldMx; this._y += my - oldMy;
+        if (oldD > 0) this._zoomAt(mx, my, this._z * newD / oldD); else this._apply();
+    },
+    _up(e) {
+        if (!this._ptrs.has(e.pointerId)) return;
+        this._ptrs.delete(e.pointerId);
+        if (this._ptrs.size > 0 || this._moved > 10) return;
+        // 두 번 톡: 확대 <-> 원래대로
+        const now = performance.now(), last = this._lastTap;
+        if (last && now - last.t < 350 && hypot(e.clientX - last.x, e.clientY - last.y) < 40) {
+            this._lastTap = null;
+            if (this._z > 1.05) { this._z = 1; this._apply(); }
+            else this._zoomAt(e.clientX, e.clientY, 2.5);
+        } else {
+            this._lastTap = { t: now, x: e.clientX, y: e.clientY };
+        }
+    },
+};
+
+for (const id of ["qimg", "eimg"]) $(id).onclick = () => ZoomView.open($(id).src);
+document.querySelectorAll(".zoombtn").forEach(b => b.onclick = e => { e.stopPropagation(); ZoomView.open($(b.dataset.for).src); });
+
 document.addEventListener("keydown", e => {
+  if (ZoomView.isOpen) return;
   if (!current || $("quiz").classList.contains("hidden")) return;
+  if (e.key === "z" || e.key === "Z") {
+    const src = answered && current.eimg ? current.eimg : current.qimg;
+    if (src) ZoomView.open(src);
+    return;
+  }
   if (e.key === "ArrowLeft" || e.key === "o" || e.key === "O") pick("O");
   else if (e.key === "ArrowRight" || e.key === "x" || e.key === "X") pick("X");
   else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!$("action").disabled) action(); }
