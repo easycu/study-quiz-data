@@ -155,6 +155,10 @@ const BOSS_GOLEM_UNLOCK_STAGE = 2, BOSS_MAGE_UNLOCK_STAGE = 4, BOSS_BLADE_UNLOCK
 const BOSS_QUEEN_UNLOCK_STAGE = 6, BOSS_JUDGE_UNLOCK_STAGE = 8, BOSS_HYBRID_UNLOCK_STAGE = 10, BOSS_HYBRID_CHANCE = 0.4;
 const EGG_BASE_HP = 16, EGG_HATCH_MS = 4200, EGG_COLOR = [235, 225, 180];
 const SHOCKWAVE_THICKNESS = 16;
+// 충격파 고리 빈틈: 개수 / 빈틈 절반 너비(라디안, 0.36 = 약 41도 너비) / 플레이어 쪽 빈틈 흔들림
+const SHOCKWAVE_GAP_COUNT = 4, SHOCKWAVE_GAP_HALF = 0.36, SHOCKWAVE_GAP_AIM_JITTER = 0.3;
+// 연달아 쓰지 않는 원형 패턴 (한 번 쓰면 다음 패턴은 원형이 아닌 것)
+const BOSS_RING_PATTERNS = ["slamRing", "stompRing", "quake", "ringShot"];
 
 // ---- 기억(스킬) ----
 const SKILL_SLOTS = 3, SKILL_CAST_GAP_MS = 500, SKILL_OFFER_CHANCE = 0.10, SKILL_OFFER_COUNT = 3;

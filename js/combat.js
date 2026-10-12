@@ -93,6 +93,22 @@ class Shockwave {
         return !this.inGap(Math.atan2(py - this.y, px - this.x));
     }
 }
+// 보스 충격파 고리의 빈틈: 하나는 플레이어 쪽 가까이에 두고 나머지는 고르게 나눈다
+//   (빈틈이 반대편에만 있어서 아무리 빨라도 못 피하는 일이 없게)
+//   same: 이미 퍼지고 있는 고리의 빈틈을 그대로 쓰면 연달아 나와도 같은 자리에서 피할 수 있다
+function ringGaps(g, m, n, halfWidth, same) {
+    if (same) return same.map(([c, h]) => [c, Math.max(h, halfWidth)]);
+    const T = g.aimFor(m);
+    const base = Math.atan2(T.y - m.y, T.x - m.x) + uniform(-SHOCKWAVE_GAP_AIM_JITTER, SHOCKWAVE_GAP_AIM_JITTER);
+    const out = [];
+    for (let i = 0; i < n; i++) out.push([base + i * Math.PI * 2 / n, halfWidth]);
+    return out;
+}
+// 이 보스가 쏜, 아직 퍼지고 있는 충격파의 빈틈 (없으면 null)
+function activeRingGaps(g, m) {
+    const w = g.shockwaves.find(s => s.owner === m && s.r < s.maxR);
+    return w ? w.gaps : null;
+}
 function randomGaps(n, halfWidth) {
     const base = uniform(0, Math.PI * 2), out = [];
     for (let i = 0; i < n; i++) out.push([base + i * Math.PI * 2 / n + uniform(-0.4, 0.4), halfWidth]);

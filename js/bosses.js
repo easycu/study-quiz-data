@@ -85,7 +85,12 @@ function updateBoss(g, m, now, canAttack) {
             }
             if (canAttack && now >= m.bUntil) {
                 const pool = bossPatternPool(m);
-                const cands = pool.length > 1 ? pool.filter(p => p !== m.lastPattern) : pool;
+                let cands = pool.length > 1 ? pool.filter(p => p !== m.lastPattern) : pool;
+                // 원형 패턴 다음에는 원형 패턴을 쓰지 않는다 (고리가 겹쳐 무조건 맞는 일 방지)
+                if (BOSS_RING_PATTERNS.includes(m.lastPattern)) {
+                    const noRing = cands.filter(p => !BOSS_RING_PATTERNS.includes(p));
+                    if (noRing.length) cands = noRing;
+                }
                 // 새로 열린 패턴은 조금 더 자주 나오게
                 const name = choice(cands);
                 m.lastPattern = name; m.patternName = name;
@@ -114,7 +119,8 @@ function startBossPhase(g, m, phase, now) {
     m.invulnUntil = m.bUntil;
     // 보스 쪽 예고는 취소 (페이즈 전환 중 억울하게 맞지 않게)
     g.telegraphs = g.telegraphs.filter(t => t.owner !== m);
-    g.shockwaves.push(new Shockwave(m.x, m.y, 5, 520, Math.max(1, pyRound(m.bulletDamage * 0.6)), randomGaps(2, 0.45), m.baseColor, m));
+    g.shockwaves.push(new Shockwave(m.x, m.y, 5, 520, Math.max(1, pyRound(m.bulletDamage * 0.6)),
+        ringGaps(g, m, SHOCKWAVE_GAP_COUNT, SHOCKWAVE_GAP_HALF + 0.06, activeRingGaps(g, m)), m.baseColor, m));
     g.shake(SCREEN_SHAKE_BOSS_DASH, SCREEN_SHAKE_DURATION_MS * 3);
     g.popup(m.x, m.y - m.radius - 34, phase === 3 ? "3페이즈 - 분노!" : "2페이즈!", [255, 120, 60]);
     if (phase === 3) {
@@ -198,7 +204,7 @@ const BOSS_PATTERNS = {
         circleTg(g, m, m.x, m.y, 120, tgMs(m, 750), 1.2, { cancelWithOwner: true });
         yield tgMs(m, 750);
         g.shake(SCREEN_SHAKE_BOSS_DASH);
-        g.shockwaves.push(new Shockwave(m.x, m.y, 4.2, 560, m.bulletDamage, randomGaps(2, 0.42), m.baseColor, m));
+        g.shockwaves.push(new Shockwave(m.x, m.y, 4.2, 560, m.bulletDamage, ringGaps(g, m, SHOCKWAVE_GAP_COUNT, SHOCKWAVE_GAP_HALF, activeRingGaps(g, m)), m.baseColor, m));
         yield 300;
     },
     // ---- 바위 거인 ----
@@ -219,16 +225,18 @@ const BOSS_PATTERNS = {
             }
             m.x = to[0]; m.y = to[1]; m.airborne = false; m.jumpHeight = 0;
             g.shake(SCREEN_SHAKE_BOSS_DASH);
-            g.shockwaves.push(new Shockwave(m.x, m.y, 4.5, 260, Math.max(1, pyRound(m.bulletDamage * 0.8)), randomGaps(1, 0.5), m.baseColor, m));
+            g.shockwaves.push(new Shockwave(m.x, m.y, 4.5, 260, Math.max(1, pyRound(m.bulletDamage * 0.8)), ringGaps(g, m, 3, 0.45, activeRingGaps(g, m)), m.baseColor, m));
             yield 280;
         }
     },
     *stompRing(g, m) {
         circleTg(g, m, m.x, m.y, 100, tgMs(m, 650), 1.2, { cancelWithOwner: true });
         yield tgMs(m, 650);
+        // 두 고리는 빈틈 자리가 같다 -> 첫 고리를 빈틈으로 피했으면 그 자리에 있으면 두 번째도 피한다
+        const gaps = ringGaps(g, m, SHOCKWAVE_GAP_COUNT, SHOCKWAVE_GAP_HALF, activeRingGaps(g, m));
         for (let i = 0; i < 2; i++) {
             g.shake(SCREEN_SHAKE_BOSS_DASH);
-            g.shockwaves.push(new Shockwave(m.x, m.y, 3.6, 620, m.bulletDamage, randomGaps(2, 0.38), m.baseColor, m));
+            g.shockwaves.push(new Shockwave(m.x, m.y, 3.6, 620, m.bulletDamage, gaps, m.baseColor, m));
             yield 650;
         }
     },

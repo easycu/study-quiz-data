@@ -729,10 +729,39 @@ function generateDungeonOnce() {
         }
         if (!placed) frontier.splice(frontier.indexOf(cur), 1);
     }
-    let boss = all[0];
-    for (const c of all) if (Math.abs(c[0]) + Math.abs(c[1]) > Math.abs(boss[0]) + Math.abs(boss[1])) boss = c;
+    // 가로세로로 붙어 있는 방은 모두 문으로 잇는다
+    for (const r of rooms.values()) {
+        for (const [d, [dx, dy]] of Object.entries(DIRECTIONS)) {
+            if (rooms.has(ck(r.x + dx, r.y + dy))) r.connections[d] = [r.x + dx, r.y + dy];
+        }
+    }
+    // 보스방: 시작방에서 가장 먼 방 중, 그 방을 빼도 나머지 방이 모두 이어지는 방
+    //   (보스방을 거쳐야만 갈 수 있는 막힌 방이 생기지 않게)
+    const dist = roomDistances(rooms, null);
+    let boss = null;
+    for (const c of all) {
+        if (c[0] === 0 && c[1] === 0) continue;
+        const reach = roomDistances(rooms, ck(c[0], c[1]));
+        if (reach.size !== rooms.size - 1) continue;
+        if (!boss || dist.get(ck(c[0], c[1])) > dist.get(ck(boss[0], boss[1]))) boss = c;
+    }
+    if (!boss) boss = all[all.length - 1];
     rooms.get(ck(boss[0], boss[1])).type = "boss";
     return [rooms, [0, 0]];
+}
+// 시작방에서 각 방까지 몇 칸인지 (blocked 방은 지나가지 않음)
+function roomDistances(rooms, blocked) {
+    const dist = new Map([[ck(0, 0), 0]]), queue = [[0, 0]];
+    while (queue.length) {
+        const [x, y] = queue.shift(), r = rooms.get(ck(x, y));
+        for (const c of Object.values(r.connections)) {
+            const k = ck(c[0], c[1]);
+            if (k === blocked || dist.has(k)) continue;
+            dist.set(k, dist.get(ck(x, y)) + 1);
+            queue.push(c);
+        }
+    }
+    return dist;
 }
 function generateDungeon() {
     let best = generateDungeonOnce();
