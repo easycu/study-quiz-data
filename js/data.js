@@ -139,7 +139,8 @@ const Problems = {
                 this.list = list;
                 this.source = "github";
                 await ProblemCache.set("problems", { index, names, files, savedAt: Date.now() });
-                return { ok: true, message: `깃허브에서 최신 문제를 받았습니다 (문제 ${list.length}개)` };
+                const gunNote = await syncGunSettings(base);
+                return { ok: true, message: `깃허브에서 최신 문제를 받았습니다 (문제 ${list.length}개)${gunNote}` };
             } catch (e) {
                 lastError = (e && e.name === "AbortError") ? "시간 초과" : String(e && e.message || e);
             }
@@ -322,18 +323,18 @@ function pickQuizQuestions(problems, count, today) {
 // =============================================================
 function toDisplay(v, isCount) {
     if (isCount) return Math.trunc(v);
-    const r = Math.round(v * 1000) / 10;
+    const r = Math.round(v * 10000) / 100;   // 소수 둘째 자리까지 (자연 0.15% 등)
     return r;
 }
 function currentGunSettings() {
     const effects = {};
     GUN_ELEMENT_ORDER.forEach(el => { effects[el] = GUN_ELEMENTS[el][2].map(x => toDisplay(x, GUN_SETTING_INFO[el][3])); });
-    return { effects, atk_bonus: GUN_GRADES.map(g => toDisplay(g[5], false)) };
+    return { effects, atk_bonus: GUN_GRADES.map(g => toDisplay(g[5], false)), nature_basis: "max_hp" };
 }
 function defaultGunSettings() {
     const effects = {};
     GUN_ELEMENT_ORDER.forEach(el => { effects[el] = DEFAULT_GUN_EFFECTS[el].map(x => toDisplay(x, GUN_SETTING_INFO[el][3])); });
-    return { effects, atk_bonus: DEFAULT_GRADE_ATK_BONUS.map(x => toDisplay(x, false)) };
+    return { effects, atk_bonus: DEFAULT_GRADE_ATK_BONUS.map(x => toDisplay(x, false)), nature_basis: "max_hp" };
 }
 function validateGunSettings(data) {
     const errors = [];
@@ -384,11 +385,41 @@ function saveGunSettings(display) {
     if (!Store.set(KEY_GUNS, currentGunSettings())) return [false, ["브라우저에 저장하지 못했습니다 (이번 실행 동안만 적용됨)"]];
     return [true, []];
 }
+// 문제 편집기에서 올린 총 설정(gun_settings.json)을 받아 적용하고, 이 기기에 저장해둔다.
+// 깃허브에 아직 설정 파일이 없으면 이 기기에 있던 설정을 그대로 쓴다.
+const GunSource = { from: "default" };     // "github" / "local" / "default"
+async function syncGunSettings(base) {
+    let data;
+    try {
+        const res = await fetchWithTimeout(base + "gun_settings.json", 10000);
+        if (res.status === 404) return "";
+        if (!res.ok) return " · 총 설정은 저장된 값 사용";
+        data = await res.json();
+    } catch (e) { return " · 총 설정은 저장된 값 사용"; }
+    if (!data || typeof data !== "object") return " · 총 설정 파일 오류(저장된 값 사용)";
+    if (data.nature_basis !== "max_hp") { data.effects = data.effects || {}; data.effects.nature = defaultGunSettings().effects.nature; }
+    const [internal, errors] = validateGunSettings(data);
+    if (errors.length) return " · 총 설정 파일 오류(저장된 값 사용)";
+    applyGunSettings(internal);
+    Store.set(KEY_GUNS, Object.assign(currentGunSettings(), { from_github: true }));
+    GunSource.from = "github";
+    return " · 총 설정 적용";
+}
+
 function loadGunSettings() {
     const data = Store.get(KEY_GUNS, null);
     if (!data) return false;
+    // 예전 설정의 자연 값(가한 피해의 %)은 의미가 달라졌으므로 새 기본값으로 바꾼다
+    let migrated = false;
+    if (typeof data === "object" && data.nature_basis !== "max_hp") {
+        data.effects = data.effects || {};
+        data.effects.nature = defaultGunSettings().effects.nature;
+        migrated = true;
+    }
     const [internal, errors] = validateGunSettings(data);
     if (errors.length) return false;
     applyGunSettings(internal);
+    GunSource.from = data.from_github ? "github" : "local";
+    if (migrated) Store.set(KEY_GUNS, Object.assign(currentGunSettings(), { from_github: !!data.from_github }));
     return true;
 }

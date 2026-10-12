@@ -281,13 +281,13 @@ class Gun {
     description() {
         const atk = `공격력 +${pyRound(this.atkBonus * 100)}%`;
         if (this.element === "wind") return `${atk} · 탄이 적 ${this.effectValue}마리 관통 (관통할 때마다 피해 -${pyRound((1 - WIND_PIERCE_DAMAGE_MULT) * 100)}%)`;
-        const v = Math.round(this.effectValue * 1000) / 10;
+        const v = Math.round(this.effectValue * 10000) / 100;
         const e = {
             fire: `5초간 매초 공격력의 ${v}% 화염 피해`,
             ice: `맞은 적 이동속도 ${v}% 감소`,
             lightning: `근처 적 ${LIGHTNING_CHAIN_COUNT}명에게 피해의 ${v}% 번개`,
             light: `맞힐수록 빛 표식 중첩(최대 ${LIGHT_MAX_STACKS}), 표식당 피해 +${v}%`,
-            nature: `가한 피해의 ${v}%만큼 체력 회복`,
+            nature: `명중할 때마다 최대체력의 ${v}% 회복`,
             dark: `${v}% 확률로 1초 무적 (끝난 뒤 1초간 재발동 없음)`,
             earth: `${v}% 확률로 1초 기절 (보스 0.5초, 끝난 뒤 1초간 재기절 없음)`,
             spread: `한 번에 ${SPREAD_PELLETS}발 부채꼴 발사, 1발 피해 ${v}%`,
@@ -352,7 +352,7 @@ function applyGunOnHit(gun, player, target, monsters, hitDamage, now) {
             break;
         }
         case "light": target.lightStacks = Math.min(LIGHT_MAX_STACKS, target.lightStacks + 1); break;
-        case "nature": out.heal = hitDamage * v; break;
+        case "nature": out.heal = player.maxHp * v; break;   // 최대체력 기준
         case "dark":
             if (now >= player.darkReadyAt && Math.random() < v) {
                 out.darkProc = true;
