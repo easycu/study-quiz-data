@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<!-- 파일을 고칠 때마다 아래 ?v= 숫자를 바꾸면, 브라우저가 예전 파일을 쓰지 않고 새로 받는다 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#1e1e2e">
 <meta name="mobile-web-app-capable" content="yes">
@@ -11,10 +12,33 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261013a">
 <title>STUDY ROGUELIKE</title>
 </head>
 <body>
+<script>
+// 파일이 빠졌거나 예전 파일이 섞여서 게임이 멈추면, 검은 화면 대신 원인을 화면에 보여준다
+(function () {
+  var shown = {};
+  function report(text) {
+    if (shown[text]) return; shown[text] = 1;
+    var box = document.getElementById("loadError");
+    if (!box) {
+      box = document.createElement("div"); box.id = "loadError";
+      box.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:99;background:#5a1e28;color:#fff;" +
+        "border:2px solid #ff8080;border-radius:10px;padding:10px 14px;font:14px/1.5 sans-serif;white-space:pre-wrap";
+      box.textContent = "게임 파일에 문제가 있습니다. js 폴더 안에 파일이 모두 올라갔는지, 예전 파일이 섞이지 않았는지 확인하세요.\n";
+      document.body.appendChild(box);
+    }
+    box.textContent += "\n• " + text;
+  }
+  window.addEventListener("error", function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.tagName === "SCRIPT" || t.tagName === "LINK")) report("파일을 찾을 수 없음: " + (t.src || t.href));
+    else if (e.message) report(e.message + (e.filename ? "  (" + e.filename.split("/").slice(-2).join("/") + ")" : ""));
+  }, true);
+})();
+</script>
 <canvas id="game"></canvas>
 
 <!-- 게임 중 일시정지 버튼 -->
@@ -87,13 +111,16 @@
 <!-- 세로 화면 안내 -->
 <div id="rotateHint" class="hidden">휴대폰을 <b>가로</b>로 돌리면 더 크게 보여요</div>
 
-<script src="js/config.js"></script>
-<script src="js/data.js"></script>
-<script src="js/world.js"></script>
-<script src="js/render.js"></script>
-<script src="js/input.js"></script>
-<script src="js/zoom.js"></script>
-<script src="js/game.js"></script>
-<script src="js/main.js"></script>
+<script src="js/config.js?v=20261013a"></script>
+<script src="js/data.js?v=20261013a"></script>
+<script src="js/world.js?v=20261013a"></script>
+<script src="js/combat.js?v=20261013a"></script>
+<script src="js/bosses.js?v=20261013a"></script>
+<script src="js/skills.js?v=20261013a"></script>
+<script src="js/render.js?v=20261013a"></script>
+<script src="js/input.js?v=20261013a"></script>
+<script src="js/zoom.js?v=20261013a"></script>
+<script src="js/game.js?v=20261013a"></script>
+<script src="js/main.js?v=20261013a"></script>
 </body>
 </html>
