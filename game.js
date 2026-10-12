@@ -137,7 +137,8 @@ class Game {
 
     // ---------------- 한 칸 진행 ----------------
     step() {
-        if (this.paused || this.ended) return;
+        // 이미지를 크게 보는 동안은 시간이 멈춘다 (풀이 시간에도 안 들어감)
+        if (this.paused || this.ended || ZoomView.isOpen) return;
         this.now += FRAME_MS;
         const now = this.now;
         if (this.stageMessage && now >= this.stageMessageUntil) this.stageMessage = "";
@@ -501,10 +502,20 @@ class Game {
         void now;
     }
 
+    // 문제/해설 이미지 크게 보기
+    openZoom(src) {
+        if (!src || ZoomView.isOpen) return;
+        Input.releaseJoystick();
+        ZoomView.open(src, () => { if (this.quiz) this.quiz.phaseChangedAt = this.now; });
+    }
+
     // 터치/클릭 (게임 좌표)
     onTap(x, y) {
         const q = this.quiz;
         if (!q) return;
+        for (const t of (q.phase !== "summary" && q.zoomTargets) || []) {
+            if (inRect(x, y, t.rect, 4)) { this.openZoom(t.src); return; }
+        }
         if (q.phase === "answering") {
             if (inRect(x, y, QUIZ_O_RECT, QUIZ_HIT_PAD)) this.quizSelect("O");
             else if (inRect(x, y, QUIZ_X_RECT, QUIZ_HIT_PAD)) this.quizSelect("X");
@@ -520,6 +531,11 @@ class Game {
         if (code === "Escape" || code === "KeyP") { if (!this.gameOver) this.setPaused(!this.paused); return; }
         const q = this.quiz;
         if (!q || this.paused) return;
+        if (code === "KeyZ" && q.phase !== "summary") {
+            const prob = q.questions[q.index];
+            this.openZoom(q.phase === "result" ? (prob._eimg || prob._qimg) : prob._qimg);
+            return;
+        }
         const enter = code === "Enter" || code === "NumpadEnter" || code === "Space";
         if (q.phase === "answering") {
             if (code === "ArrowLeft" || code === "KeyA" || code === "KeyO") this.quizSelect("O");

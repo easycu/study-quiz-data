@@ -45,15 +45,12 @@
 <!-- 총 설정 -->
 <div id="settings" class="overlay hidden">
   <div class="panel wide">
-    <h2>설정 - 총 성능</h2>
-    <p class="hint">각 칸에 숫자만 입력하세요 (%는 빼고). 바람은 관통하는 적 마릿수입니다.</p>
-    <div class="scroll"><table id="gunTable" class="settings"></table></div>
+    <h2>총 성능 (모든 기기 공통)</h2>
     <p id="settingsMsg" class="status"></p>
-    <div class="row">
-      <button id="btnSettingsSave">저장</button>
-      <button id="btnSettingsDefault">기본값으로</button>
-      <button class="back">닫기</button>
-    </div>
+    <div class="scroll"><table id="gunTable" class="settings"></table></div>
+    <p class="hint">값은 PC의 문제 편집기에서 '총 설정'을 바꾸고 '깃허브에 올리기'를 누르면 바뀝니다.<br>
+      그다음 메뉴의 '문제 새로 받기'를 누르면 이 기기에도 바로 적용됩니다. (숫자는 %, 바람만 관통 마릿수)</p>
+    <div class="row"><button class="back">닫기</button></div>
   </div>
 </div>
 
@@ -80,6 +77,13 @@
   </div>
 </div>
 
+<!-- 이미지 크게 보기 -->
+<div id="zoomView" class="hidden">
+  <div id="zoomStage"><img id="zoomImg" alt="확대 이미지" draggable="false"></div>
+  <button id="zoomClose" aria-label="닫기">✕</button>
+  <p id="zoomHint">두 손가락으로 벌려 더 확대 · 두 번 톡 = 확대/원래대로 · ✕ 또는 Esc로 닫기</p>
+</div>
+
 <!-- 세로 화면 안내 -->
 <div id="rotateHint" class="hidden">휴대폰을 <b>가로</b>로 돌리면 더 크게 보여요</div>
 
@@ -88,6 +92,7 @@
 <script src="js/world.js"></script>
 <script src="js/render.js"></script>
 <script src="js/input.js"></script>
+<script src="js/zoom.js"></script>
 <script src="js/game.js"></script>
 <script src="js/main.js"></script>
 </body>

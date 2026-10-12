@@ -545,13 +545,25 @@ function quizImage(src) {
     }
     return e;
 }
+// 이미지를 그리고 그린 영역 [x, y, w, h]를 돌려준다 (아직 못 불러왔으면 null)
 function drawQuizImage(ctx, src, x, y, maxW, maxH) {
     const e = quizImage(src);
-    if (!e || e.failed) { R.text(ctx, "[이미지를 불러올 수 없습니다]", x, y, 14, [230, 120, 120]); return; }
-    if (!e.ok) { R.text(ctx, "이미지 불러오는 중...", x, y, 14, [170, 170, 190]); return; }
+    if (!e || e.failed) { R.text(ctx, "[이미지를 불러올 수 없습니다]", x, y, 14, [230, 120, 120]); return null; }
+    if (!e.ok) { R.text(ctx, "이미지 불러오는 중...", x, y, 14, [170, 170, 190]); return null; }
     const s = Math.min(maxW / e.img.width, maxH / e.img.height, 1);
+    const w = Math.round(e.img.width * s), h = Math.round(e.img.height * s);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(e.img, x, y, Math.round(e.img.width * s), Math.round(e.img.height * s));
+    ctx.drawImage(e.img, x, y, w, h);
+    return [x, y, w, h];
+}
+// "크게 보기" 돋보기 버튼
+const QUIZ_ZOOM_BTN = 40, QUIZ_PANEL_RIGHT = SCREEN_W - 70;
+function drawZoomButton(ctx, x, y, size) {
+    R.rect(ctx, x, y, size, size, [40, 40, 60], 0, 9);
+    R.rect(ctx, x + 1, y + 1, size - 2, size - 2, [170, 170, 210], 2, 9);
+    const cx = x + size * 0.43, cy = y + size * 0.43, r = size * 0.22;
+    R.circle(ctx, cx, cy, r, [235, 235, 245], 3);
+    R.line(ctx, cx + r * 0.7, cy + r * 0.7, x + size * 0.78, y + size * 0.78, [235, 235, 245], 4);
 }
 function drawQuizScreen(ctx, q, now, touchMode) {
     ctx.fillStyle = rgb([16, 16, 24]); ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
@@ -579,53 +591,79 @@ function drawQuizScreen(ctx, q, now, touchMode) {
         return;
     }
     const prob = q.questions[q.index];
+    const targets = q.zoomTargets = [];        // [{rect, src}] 누르면 크게 보기
     const kind = q.flags[q.index] ? "   ·   오늘 복습" : "   ·   랜덤 연습 (복습 일정에 반영 안 됨)";
     R.text(ctx, `문제 ${q.index + 1} / ${QUESTIONS_PER_ROOM}${kind}`, SCREEN_W / 2, 82, 14, [180, 180, 195], { align: "center" });
-    if (prob._qimg) drawQuizImage(ctx, prob._qimg, cx, 130, cw, 160);
-    else {
-        let y = 130;
-        for (const l of wrapTextLines(ctx, prob.question, cw, 20)) { R.text(ctx, l, cx, y, 20, [240, 240, 245]); y += 32; }
-    }
-    const drawChoice = (rect, label, sel, resColor, pressed) => {
-        const base = resColor || (sel ? [255, 220, 90] : [70, 70, 95]);
-        const [x, y, w, h] = rect;
-        const d = pressed ? 2 : 0;
-        R.rect(ctx, x + d, y + d, w, h, base, 0, 12);
-        R.rect(ctx, x + 1.5 + d, y + 1.5 + d, w - 3, h - 3, [230, 230, 240], 3, 12);
-        R.text(ctx, label, x + w / 2 + d, y + h / 2 - 26 + d, 44, (sel || resColor) ? [20, 20, 30] : [210, 210, 220], { bold: true, align: "center" });
+
+    // 이미지 + 옆에 돋보기 버튼. 그린 높이를 돌려준다.
+    const image = (src, x, y, maxW, maxH) => {
+        const r = drawQuizImage(ctx, src, x, y, maxW - QUIZ_ZOOM_BTN - 10, maxH);
+        if (!r) return 20;
+        const b = QUIZ_ZOOM_BTN;
+        const beside = r[0] + r[2] + 8 + b <= QUIZ_PANEL_RIGHT - 6;
+        const bx = beside ? r[0] + r[2] + 8 : r[0] + r[2] - b - 4, by = beside ? r[1] : r[1] + 4;
+        drawZoomButton(ctx, bx, by, b);
+        targets.push({ rect: r, src }, { rect: [bx, by, b, b], src });
+        return r[3];
     };
+    const lines = (arr, x, y, size, color, lh) => { for (const l of arr) { R.text(ctx, l, x, y, size, color); y += lh; } };
+    const fit = (arr, max) => {
+        if (arr.length <= max) return arr;
+        const out = arr.slice(0, Math.max(0, max));
+        if (out.length) out[out.length - 1] = out[out.length - 1].slice(0, -1) + "…";
+        return out;
+    };
+    const zoomHint = touchMode ? "이미지를 누르면 크게 보기" : "Z  이미지 크게 보기";
+
     if (q.phase === "answering") {
-        drawChoice(QUIZ_O_RECT, "O", q.selected === "O", null, q.pressed === "O");
-        drawChoice(QUIZ_X_RECT, "X", q.selected === "X", null, q.pressed === "X");
+        if (prob._qimg) image(prob._qimg, cx, 130, cw, 160);
+        else lines(wrapTextLines(ctx, prob.question, cw, 20), cx, 130, 20, [240, 240, 245], 32);
+        const drawChoice = (rect, label, sel, pressed) => {
+            const [x, y, w, h] = rect, d = pressed ? 2 : 0;
+            R.rect(ctx, x + d, y + d, w, h, sel ? [255, 220, 90] : [70, 70, 95], 0, 12);
+            R.rect(ctx, x + 1.5 + d, y + 1.5 + d, w - 3, h - 3, [230, 230, 240], 3, 12);
+            R.text(ctx, label, x + w / 2 + d, y + h / 2 - 26 + d, 44, sel ? [20, 20, 30] : [210, 210, 220], { bold: true, align: "center" });
+        };
+        drawChoice(QUIZ_O_RECT, "O", q.selected === "O", q.pressed === "O");
+        drawChoice(QUIZ_X_RECT, "X", q.selected === "X", q.pressed === "X");
         const [sx, sy, sw, sh] = QUIZ_SUBMIT_RECT;
         const on = q.selected !== null;
         const d = q.pressed === "submit" ? 2 : 0;
         R.rect(ctx, sx + d, sy + d, sw, sh, on ? [47, 125, 79] : [52, 52, 66], 0, 10);
         R.rect(ctx, sx + 1 + d, sy + 1 + d, sw - 2, sh - 2, on ? [140, 230, 160] : [80, 80, 100], 2, 10);
         R.text(ctx, "확인", sx + sw / 2 + d, sy + 13 + d, 22, on ? [255, 255, 255] : [130, 130, 150], { bold: true, align: "center" });
-        R.text(ctx, touchMode ? "O 또는 X를 누른 뒤 '확인'"
-                              : "←  O 선택      →  X 선택      Enter  제출   (마우스로 눌러도 됨)",
-               SCREEN_W / 2, SCREEN_H - 150 + 22, 14, [180, 200, 220], { align: "center" });
-    } else {
-        const correct = prob.correct;
-        const oc = correct === "O" ? [90, 210, 90] : (q.selected === "O" ? [210, 70, 70] : null);
-        const xc = correct === "X" ? [90, 210, 90] : (q.selected === "X" ? [210, 70, 70] : null);
-        drawChoice(QUIZ_O_RECT, "O", q.selected === "O", oc);
-        drawChoice(QUIZ_X_RECT, "X", q.selected === "X", xc);
-        const right = q.selected === correct;
-        R.text(ctx, `정답: ${correct}   (${right ? "정답!" : "오답"})`, SCREEN_W / 2, 408, 20, right ? [120, 230, 120] : [230, 110, 110], { align: "center" });
-        const info = q.reviewInfo;
-        if (info) {
-            const t = `풀이 시간 ${info.elapsedSec.toFixed(1)}초 (${ANSWER_TIER_LABEL_KO[info.tier] || ""})` +
-                (info.practice ? "   ·   랜덤 연습 문제 - 복습 일정은 그대로"
-                    : info.early ? `   ·   복습일 전이라 일정 유지 (${info.due})` : `   ·   다음 복습까지 ${info.interval}일`);
-            R.text(ctx, t, SCREEN_W / 2, 432, 14, [150, 175, 205], { align: "center" });
-        }
-        if (prob._eimg) drawQuizImage(ctx, prob._eimg, cx, 450, cw, 100);
-        else {
-            let y = 450;
-            for (const l of wrapTextLines(ctx, prob.explanation, cw, 14)) { R.text(ctx, l, cx, y, 14, [200, 200, 210]); y += 24; }
-        }
-        R.text(ctx, `${cont}  다음 문제`, SCREEN_W / 2, SCREEN_H - 90, 14, [180, 200, 220], { align: "center" });
+        let hint = touchMode ? "O 또는 X를 누른 뒤 '확인'" : "←  O 선택      →  X 선택      Enter  제출   (마우스로 눌러도 됨)";
+        if (prob._qimg) hint += "      " + zoomHint;
+        R.text(ctx, hint, SCREEN_W / 2, SCREEN_H - 128, 14, [180, 200, 220], { align: "center" });
+        return;
     }
+
+    // ---- 결과: 위 문제(작게) / 가운데 정답 여부 / 아래 해설 (이미지 + 그 밑에 추가 설명 글) ----
+    if (prob._qimg) image(prob._qimg, cx, 106, cw, 110);
+    else lines(fit(wrapTextLines(ctx, prob.question, cw, 20), 4), cx, 106, 20, [215, 215, 225], 28);
+    const correct = prob.correct, right = q.selected === correct;
+    R.text(ctx, right ? `정답!   (정답 ${correct})` : `오답   (내 답 ${q.selected}  →  정답 ${correct})`,
+           SCREEN_W / 2, 226, 22, right ? [120, 230, 120] : [240, 110, 110], { bold: true, align: "center" });
+    const info = q.reviewInfo;
+    if (info) {
+        const t = `풀이 시간 ${info.elapsedSec.toFixed(1)}초 (${ANSWER_TIER_LABEL_KO[info.tier] || ""})` +
+            (info.practice ? "   ·   랜덤 연습 문제 - 복습 일정은 그대로"
+                : info.early ? `   ·   복습일 전이라 일정 유지 (${info.due})` : `   ·   다음 복습까지 ${info.interval}일`);
+        R.text(ctx, t, SCREEN_W / 2, 258, 14, [150, 175, 205], { align: "center" });
+    }
+    R.line(ctx, cx, 284.5, cx + cw, 284.5, [70, 70, 95], 1);
+
+    const top = QUIZ_EXPLAIN_TOP, areaH = QUIZ_EXPLAIN_BOTTOM - QUIZ_EXPLAIN_TOP, lh = 28, size = 19;
+    let exp = wrapTextLines(ctx, (prob.explanation || "").trim(), cw, size);
+    if (prob._eimg) {
+        // 이미지를 먼저, 남는 자리에 추가 설명 글 (겹치지 않게)
+        exp = fit(exp, Math.floor((areaH - 110 - 10) / lh));
+        const imgMaxH = areaH - (exp.length ? exp.length * lh + 10 : 0);
+        const h = image(prob._eimg, cx, top, cw, imgMaxH);
+        lines(exp, cx, top + h + 10, size, [222, 222, 232], lh);
+    } else {
+        lines(fit(exp, Math.floor(areaH / lh)), cx, top, size, [222, 222, 232], lh);
+    }
+    R.text(ctx, `${cont}  다음 문제` + (targets.length ? "      " + zoomHint : ""), SCREEN_W / 2, SCREEN_H - 84, 14, [180, 200, 220], { align: "center" });
 }
+const QUIZ_EXPLAIN_TOP = 296, QUIZ_EXPLAIN_BOTTOM = SCREEN_H - 94;

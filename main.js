@@ -137,7 +137,7 @@ $("btnStart").onclick = async () => {
 };
 $("btnSync").onclick = () => startSync();
 $("btnRanking").onclick = () => { renderRanking(); show("ranking"); };
-$("btnSettings").onclick = () => { renderSettings(currentGunSettings()); $("settingsMsg").textContent = ""; show("settings"); };
+$("btnSettings").onclick = () => { renderSettings(currentGunSettings()); show("settings"); };
 document.querySelectorAll(".back").forEach(b => b.onclick = () => show("menu"));
 
 $("pauseBtn").addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); if (game && !game.gameOver) game.setPaused(true); });
@@ -176,54 +176,24 @@ function renderRanking() {
             `<td class="name">${esc(s.name || "Player")}</td><td>${esc(s.date || "")}</td></tr>`).join("");
 }
 
-// ---------------- 총 설정 (Python 설정 창과 같은 표) ----------------
+// ---------------- 총 성능 보기 (값은 문제 편집기에서 바꿔 깃허브에 올림) ----------------
 function renderSettings(values) {
     const t = $("gunTable");
     const grades = GUN_GRADES.map(g => g[1]);
-    let html = `<tr><th>총</th>${grades.map(g => `<th>${g}</th>`).join("")}<th>설명</th></tr>`;
+    let html = `<tr><th>총</th>${grades.map(g => `<th>${g}</th>`).join("")}<th>의미</th></tr>`;
     for (const el of GUN_ELEMENT_ORDER) {
-        const [desc, lo, hi] = GUN_SETTING_INFO[el];
-        html += `<tr><td>${GUN_ELEMENTS[el][0]}</td>` +
-            values.effects[el].map((v, i) => `<td><input data-el="${el}" data-i="${i}" value="${esc(v)}" inputmode="decimal"></td>`).join("") +
-            `<td class="desc">${esc(desc)} (${lo}~${hi})</td></tr>`;
+        html += `<tr><td>${GUN_ELEMENTS[el][0]}</td>` + values.effects[el].map(v => `<td>${esc(v)}</td>`).join("") +
+            `<td class="desc">${esc(GUN_SETTING_INFO[el][0])}</td></tr>`;
     }
-    html += `<tr><td>공격력<br>보너스</td>` +
-        values.atk_bonus.map((v, i) => `<td><input data-el="__atk" data-i="${i}" value="${esc(v)}" inputmode="decimal"></td>`).join("") +
-        `<td class="desc">등급별 공격력 +% (0~500)</td></tr>`;
+    html += `<tr><td>공격력<br>보너스</td>` + values.atk_bonus.map(v => `<td>${esc(v)}</td>`).join("") +
+        `<td class="desc">등급별 공격력 +%</td></tr>`;
     t.innerHTML = html;
-}
-function readSettingsTable() {
-    const out = { effects: {}, atk_bonus: [] };
-    GUN_ELEMENT_ORDER.forEach(el => { out.effects[el] = []; });
-    document.querySelectorAll("#gunTable input").forEach(inp => {
-        const el = inp.dataset.el, i = Number(inp.dataset.i);
-        if (el === "__atk") out.atk_bonus[i] = inp.value; else out.effects[el][i] = inp.value;
-    });
-    return out;
-}
-$("btnSettingsSave").onclick = () => {
-    document.querySelectorAll("#gunTable input").forEach(i => i.classList.remove("bad"));
-    const [ok, errors] = saveGunSettings(readSettingsTable());
     const msg = $("settingsMsg");
-    if (ok) { msg.textContent = "저장했습니다. 다음 게임부터 적용됩니다."; msg.className = "status ok"; }
-    else {
-        msg.textContent = errors.slice(0, 4).join(" / ") + (errors.length > 4 ? ` 외 ${errors.length - 4}개` : "");
-        msg.className = "status err";
-        // 잘못된 칸 빨갛게
-        const [, errs] = validateGunSettings(readSettingsTable());
-        document.querySelectorAll("#gunTable input").forEach(inp => {
-            const name = inp.dataset.el === "__atk" ? "공격력 보너스" : GUN_ELEMENTS[inp.dataset.el][0];
-            const grade = GUN_GRADES[Number(inp.dataset.i)][1];
-            if (errs.some(e => e.startsWith(`${name} ${grade}:`))) inp.classList.add("bad");
-        });
-    }
-};
-$("btnSettingsDefault").onclick = () => {
-    renderSettings(defaultGunSettings());
-    const msg = $("settingsMsg");
-    msg.textContent = "기본값을 채웠습니다. '저장'을 눌러야 적용됩니다.";
-    msg.className = "status warn";
-};
+    msg.textContent = { github: "깃허브의 총 설정을 쓰는 중입니다.",
+                        local: "이 기기에 저장된 예전 설정을 쓰는 중입니다 (깃허브에 아직 총 설정이 없음).",
+                        default: "기본값을 쓰는 중입니다 (깃허브에 아직 총 설정이 없음)." }[GunSource.from];
+    msg.className = "status" + (GunSource.from === "github" ? " ok" : " warn");
+}
 
 // ---------------- 시작 ----------------
 try { loadGunSettings(); } catch (e) { /* 저장된 설정이 망가졌으면 기본값 사용 */ }

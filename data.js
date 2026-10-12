@@ -139,7 +139,8 @@ const Problems = {
                 this.list = list;
                 this.source = "github";
                 await ProblemCache.set("problems", { index, names, files, savedAt: Date.now() });
-                return { ok: true, message: `깃허브에서 최신 문제를 받았습니다 (문제 ${list.length}개)` };
+                const gunNote = await syncGunSettings(base);
+                return { ok: true, message: `깃허브에서 최신 문제를 받았습니다 (문제 ${list.length}개)${gunNote}` };
             } catch (e) {
                 lastError = (e && e.name === "AbortError") ? "시간 초과" : String(e && e.message || e);
             }
@@ -384,6 +385,27 @@ function saveGunSettings(display) {
     if (!Store.set(KEY_GUNS, currentGunSettings())) return [false, ["브라우저에 저장하지 못했습니다 (이번 실행 동안만 적용됨)"]];
     return [true, []];
 }
+// 문제 편집기에서 올린 총 설정(gun_settings.json)을 받아 적용하고, 이 기기에 저장해둔다.
+// 깃허브에 아직 설정 파일이 없으면 이 기기에 있던 설정을 그대로 쓴다.
+const GunSource = { from: "default" };     // "github" / "local" / "default"
+async function syncGunSettings(base) {
+    let data;
+    try {
+        const res = await fetchWithTimeout(base + "gun_settings.json", 10000);
+        if (res.status === 404) return "";
+        if (!res.ok) return " · 총 설정은 저장된 값 사용";
+        data = await res.json();
+    } catch (e) { return " · 총 설정은 저장된 값 사용"; }
+    if (!data || typeof data !== "object") return " · 총 설정 파일 오류(저장된 값 사용)";
+    if (data.nature_basis !== "max_hp") { data.effects = data.effects || {}; data.effects.nature = defaultGunSettings().effects.nature; }
+    const [internal, errors] = validateGunSettings(data);
+    if (errors.length) return " · 총 설정 파일 오류(저장된 값 사용)";
+    applyGunSettings(internal);
+    Store.set(KEY_GUNS, Object.assign(currentGunSettings(), { from_github: true }));
+    GunSource.from = "github";
+    return " · 총 설정 적용";
+}
+
 function loadGunSettings() {
     const data = Store.get(KEY_GUNS, null);
     if (!data) return false;
@@ -397,6 +419,7 @@ function loadGunSettings() {
     const [internal, errors] = validateGunSettings(data);
     if (errors.length) return false;
     applyGunSettings(internal);
-    if (migrated) Store.set(KEY_GUNS, currentGunSettings());
+    GunSource.from = data.from_github ? "github" : "local";
+    if (migrated) Store.set(KEY_GUNS, Object.assign(currentGunSettings(), { from_github: !!data.from_github }));
     return true;
 }

@@ -68,3 +68,13 @@ input.bad { border-color: #ff6060; background: #4a2030; }
   background: rgba(30, 30, 46, 0.92); border: 1px solid #6a6a90; border-radius: 10px;
   padding: 8px 14px; font-size: 14px; pointer-events: none; white-space: nowrap;
 }
+
+/* ---- 이미지 크게 보기 ---- */
+#zoomView { position: fixed; inset: 0; z-index: 20; background: rgba(5, 5, 9, 0.96); touch-action: none; }
+#zoomStage { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; }
+#zoomImg { position: absolute; left: 50%; top: 50%; max-width: none; transform-origin: 0 0;
+  user-select: none; -webkit-user-select: none; -webkit-user-drag: none; background: #fff; border-radius: 4px; }
+#zoomClose { position: absolute; top: 10px; right: 10px; min-width: 0; min-height: 0; width: 52px; height: 52px;
+  padding: 0; font-size: 24px; border-radius: 12px; background: rgba(40, 40, 60, 0.85); z-index: 2; }
+#zoomHint { position: absolute; left: 0; right: 0; bottom: 6px; margin: 0; text-align: center; color: #9a9ab8;
+  font-size: 12px; pointer-events: none; }
