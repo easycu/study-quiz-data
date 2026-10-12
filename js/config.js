@@ -100,6 +100,85 @@ const BOSS_VENOM_POOL_COOLDOWN_MS = 2600, BOSS_VENOM_TRAIL_COOLDOWN_MS = 1500, B
 const MELEE_SUBTYPE_POOL = ["chase", "chase", "chase", "dash"];
 const RANGED_SUBTYPE_POOL = ["single", "single", "spread", "double"];
 
+// ---- 공격 예고 (빨간 원/선/부채꼴) ----
+const TELEGRAPH_COLOR = [255, 70, 50];
+const MIN_TELEGRAPH_MS = 600;            // 걸어서 피할 수 있게 최소 이만큼 미리 보여준다
+
+// ---- 새 일반 몬스터 ----
+// 자폭병: 다가와서 멈추고 깜빡이다 폭발 (깜빡일 때 죽이면 폭발 안 함)
+const KAMIKAZE_BASE_HP = 12, KAMIKAZE_TOUCH_DMG = 6, KAMIKAZE_BLAST_DMG = 24, KAMIKAZE_BLAST_RADIUS = 80;
+const KAMIKAZE_TRIGGER_RANGE = 75, KAMIKAZE_FUSE_MS = 750, KAMIKAZE_COLOR = [255, 90, 60], KAMIKAZE_UNLOCK_STAGE = 2;
+// 도약병: 플레이어 자리에 착지 원을 보여주고 뛰어올라 내려찍기
+const LEAPER_BASE_HP = 22, LEAPER_TOUCH_DMG = 9, LEAPER_SLAM_DMG = 18, LEAPER_SLAM_RADIUS = 62;
+const LEAPER_RANGE = 330, LEAPER_AIR_MS = 850, LEAPER_COOLDOWN_MS = 2800, LEAPER_COLOR = [200, 150, 90], LEAPER_UNLOCK_STAGE = 3;
+// 암살자: 사라졌다가 등 뒤에 나타나 짧게 예고하고 베기
+const ASSASSIN_BASE_HP = 18, ASSASSIN_TOUCH_DMG = 8, ASSASSIN_SLASH_DMG = 18, ASSASSIN_SLASH_LEN = 95;
+const ASSASSIN_SLASH_HALF_DEG = 55, ASSASSIN_HIDE_MS = 650, ASSASSIN_WINDUP_MS = 600, ASSASSIN_COOLDOWN_MS = 4300;
+const ASSASSIN_COLOR = [110, 90, 140], ASSASSIN_UNLOCK_STAGE = 5;
+// 포탑: 제자리에서 돌면서 나선형으로 탄을 뿌림
+const TURRET_BASE_HP = 30, TURRET_TOUCH_DMG = 6, TURRET_BULLET_DMG = 8, TURRET_BULLET_SPEED = 3.2;
+const TURRET_FIRE_GAP_MS = 150, TURRET_BURST_MS = 2400, TURRET_REST_MS = 2000, TURRET_ARMS = 2;
+const TURRET_COLOR = [150, 150, 165], TURRET_UNLOCK_STAGE = 3;
+// 저격병: 빨간 조준선 1초 -> 빠른 탄
+const SNIPER_BASE_HP = 14, SNIPER_BULLET_DMG = 20, SNIPER_BULLET_SPEED = 13, SNIPER_AIM_MS = 1000;
+const SNIPER_LOCK_MS = 350, SNIPER_COOLDOWN_MS = 3200, SNIPER_COLOR = [70, 120, 200], SNIPER_UNLOCK_STAGE = 4;
+// 함정꾼: 도망다니며 지뢰를 깔아둠
+const TRAPPER_BASE_HP = 16, TRAPPER_MINE_DMG = 16, TRAPPER_MINE_RADIUS = 55, TRAPPER_MINE_ARM_MS = 800;
+const TRAPPER_MINE_FUSE_MS = 300, TRAPPER_MINE_LIFE_MS = 12000, TRAPPER_MINE_GAP_MS = 2300, TRAPPER_MAX_MINES = 4;
+const TRAPPER_COLOR = [190, 170, 70], TRAPPER_UNLOCK_STAGE = 4;
+// 주술사: 주변 몬스터 회복 / 보호막, 죽은 몬스터 1번 부활
+const SHAMAN_BASE_HP = 18, SHAMAN_CAST_MS = 3500, SHAMAN_RANGE = 230, SHAMAN_HEAL_RATIO = 0.2;
+const SHAMAN_SHIELD_RATIO = 0.25, SHAMAN_SHIELD_MS = 4000, SHAMAN_REVIVE_WINDOW_MS = 6000;
+const SHAMAN_COLOR = [100, 230, 190], SHAMAN_UNLOCK_STAGE = 5;
+// 저주술사: 맞으면 느려지는 보라색 구슬
+const HEXER_BASE_HP = 15, HEXER_BULLET_DMG = 8, HEXER_COOLDOWN_MS = 2600, HEXER_SLOW_PCT = 0.35, HEXER_SLOW_MS = 2000;
+const HEXER_COLOR = [170, 80, 200], HEXER_UNLOCK_STAGE = 6;
+
+// ---- 엘리트 접두사 ----
+// [키, 이름, 색]
+const ELITE_AFFIXES = [
+    ["fire", "화염", [255, 120, 40]], ["frost", "냉기", [130, 210, 255]], ["explosive", "폭발", [255, 80, 60]],
+    ["arcane", "비전", [200, 110, 255]], ["vampire", "흡혈", [220, 40, 70]], ["swift", "신속", [120, 255, 160]],
+    ["shielded", "보호막", [140, 200, 255]], ["splitting", "분열", [255, 220, 90]],
+];
+const ELITE_CHANCE_PER_STAGE = 0.01, ELITE_CHANCE_MAX = 0.25, ELITE_TWO_AFFIX_STAGE = 6;
+const ELITE_FIRE_TRAIL_MS = 450, ELITE_FROST_GAP_MS = 5200, ELITE_FROST_RADIUS = 110, ELITE_FROST_DMG = 10;
+const ELITE_EXPLODE_RADIUS = 90, ELITE_EXPLODE_DMG = 20, ELITE_ARCANE_LEN = 140, ELITE_ARCANE_DMG = 12;
+const ELITE_VAMPIRE_HEAL_MULT = 1.5, ELITE_SWIFT_SPEED = 1.45, ELITE_SWIFT_COOLDOWN = 0.7;
+const ELITE_SHIELD_GAP_MS = 6500, ELITE_SHIELD_RATIO = 0.3, ELITE_SHIELD_MS = 3000;
+
+// ---- 보스 공통 구조 ----
+const BOSS_PHASE2_RATIO = 0.70, BOSS_PHASE3_RATIO = 0.35, BOSS_PHASE_CHANGE_MS = 1300;
+const BOSS_MOVE_MS = [900, 1500], BOSS_REST_MS = [1000, 1500], BOSS_REST_DAMAGE_MULT = 1.25;
+const BOSS_PHASE3_SPEED_MULT = 1.2, BOSS_PHASE3_REST_MULT = 0.65;
+const BOSS_GOLEM_UNLOCK_STAGE = 2, BOSS_MAGE_UNLOCK_STAGE = 4, BOSS_BLADE_UNLOCK_STAGE = 5;
+const BOSS_QUEEN_UNLOCK_STAGE = 6, BOSS_JUDGE_UNLOCK_STAGE = 8, BOSS_HYBRID_UNLOCK_STAGE = 10, BOSS_HYBRID_CHANCE = 0.4;
+const EGG_BASE_HP = 16, EGG_HATCH_MS = 4200, EGG_COLOR = [235, 225, 180];
+const SHOCKWAVE_THICKNESS = 16;
+
+// ---- 기억(스킬) ----
+const SKILL_SLOTS = 3, SKILL_CAST_GAP_MS = 500, SKILL_OFFER_CHANCE = 0.10, SKILL_OFFER_COUNT = 3;
+const SKILL_MAX_LEVEL = 10, SKILL_DMG_PER_LEVEL = 0.2, SKILL_SYNERGY_MULT = 1.3;
+// 기억 원소 -> 시너지가 생기는 총 원소
+const SKILL_SYNERGY_GUNS = { fire: ["fire"], ice: ["ice"], light: ["light", "lightning"], dark: ["dark"] };
+const SKILL_ELEMENT_INFO = {
+    none: ["무속성", [200, 200, 210]], fire: ["화염", [255, 120, 50]], ice: ["얼음", [130, 215, 255]],
+    light: ["빛", [255, 235, 120]], dark: ["어둠", [170, 90, 230]],
+};
+// 기억으로 강해진 만큼 몬스터 체력도 조금 올린다 (방에 들어갈 때 갖고 있는 기억 기준)
+//   시뮬레이션: 기억 1/2/3개 = 전투방 화력 약 x1.2/x1.4/x1.6, 보스전 약 x1.1/x1.2/x1.3
+//   -> 늘어난 화력의 절반쯤만 체력으로 돌려서, 기억을 얻으면 확실히 강해진 느낌은 남긴다
+const SKILL_HP_PER_SKILL = 0.10, SKILL_HP_PER_LEVEL = 0.015;            // 일반 몬스터
+const SKILL_BOSS_HP_PER_SKILL = 0.03, SKILL_BOSS_HP_PER_LEVEL = 0.005;  // 보스
+function skillMonsterHpMult(p, isBoss) {
+    if (!p || !p.skills || !p.skills.length) return 1;
+    const n = p.skills.length, lv = p.skills.reduce((a, s) => a + s.level, 0);
+    return isBoss ? 1 + SKILL_BOSS_HP_PER_SKILL * n + SKILL_BOSS_HP_PER_LEVEL * lv
+                  : 1 + SKILL_HP_PER_SKILL * n + SKILL_HP_PER_LEVEL * lv;
+}
+// 기억의 쿨타임: 원작 공식 17/(17+강화 수)
+function skillCooldownMult(level) { return 17 / (17 + level); }
+
 // ---- 총 ----
 // [키, 한글 이름, 등장 확률, 테두리 색, 테두리 두께, 공격력 보너스]
 const GUN_GRADES = [

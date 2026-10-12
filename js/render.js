@@ -86,7 +86,7 @@ function pickAnimFrame(frames, now, offset) {
 }
 function monsterSpriteKey(m) {
     if (m.isBoss) return MONSTER_SKIN_BOSS;
-    if (m.type === "melee") return m.subtype === "dash" ? MONSTER_SKIN_MELEE_DASH : MONSTER_SKIN_MELEE;
+    if (m.type === "melee") return (m.subtype === "dash" || m.subtype === "leaper" || m.subtype === "assassin") ? MONSTER_SKIN_MELEE_DASH : MONSTER_SKIN_MELEE;
     return MONSTER_SKIN_RANGED;
 }
 // 색 입히기 (그림 모양 안쪽에만) - 결과는 캐시
@@ -208,12 +208,19 @@ function drawMonsterShape(ctx, m, now) {
     const cx = m.x, cy = m.y, r = m.radius;
     if (m.isElite) R.circle(ctx, cx, cy, r + 7, [255, 215, 60], 3);
     drawRageAura(ctx, m, now);
-    const skin = Sprites.monsters[monsterSpriteKey(m)];
+    const sub = m.subtype;
+    const skin = (sub === "egg" || sub === "turret") ? null : Sprites.monsters[monsterSpriteKey(m)];
     if (skin) {
         const frame = pickAnimFrame(skin.move || skin.idle, now, m.animOffset);
         if (frame) { blitSprite(ctx, frame, cx, cy, r * 2 + 14, now < m.hitFlashUntil, m.color); return; }
     }
-    const sub = m.subtype;
+    if (sub === "egg") {
+        const body = now < m.hitFlashUntil ? [255, 255, 255] : m.color;
+        ctx.beginPath(); ctx.ellipse(cx, cy, r * 0.85, r * 1.1, 0, 0, Math.PI * 2); ctx.fillStyle = rgb(shadeColor(body, -50)); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cx, cy, r * 0.75, r, 0, 0, Math.PI * 2); ctx.fillStyle = rgb(body); ctx.fill();
+        R.circle(ctx, cx - r * 0.3, cy - r * 0.2, 3, [170, 150, 90]); R.circle(ctx, cx + r * 0.25, cy + r * 0.3, 2, [170, 150, 90]);
+        return;
+    }
     if (sub === "dash") {
         for (let i = 0; i < 8; i++) {
             const a = radians(i * 45 + (now / 10) % 45);
@@ -239,7 +246,7 @@ function drawBossShape(ctx, m, now) {
     const skin = Sprites.monsters[MONSTER_SKIN_BOSS];
     if (skin) {
         const frame = pickAnimFrame(skin.move || skin.idle, now, m.animOffset);
-        if (frame) { blitSprite(ctx, frame, cx, cy, r * 2 + 10, now < m.hitFlashUntil, m.enraged ? m.color : null); return; }
+        if (frame) { blitSprite(ctx, frame, cx, cy, r * 2 + 10, now < m.hitFlashUntil, m.enraged ? m.color : (m.variant === "brute" ? null : m.baseColor)); return; }
     }
     for (let i = 0; i < 10; i++) {
         const a = radians(i * 36 + (now / 20) % 36);
@@ -441,30 +448,65 @@ function drawGame(ctx, g, now) {
     if (room.connections.E) door(PLAY_RIGHT - 4, SCREEN_H / 2 - 26, 14, 52);
 
     for (const h of g.hazards) drawHazard(ctx, h, now);
+    for (const z of (g.zones || [])) drawZone(ctx, z, now);
+    for (const mi of (g.mines || [])) drawMine(ctx, mi, now);
     for (const o of g.obstacles) drawObstacle(ctx, o);
+    for (const tg of (g.telegraphs || [])) drawTelegraph(ctx, tg, now, g.obstacles);
+    if (g.decoy) drawDecoy(ctx, g.decoy, now);
     const ready = now >= room.rewardActiveAt;
     if (room.portal) drawPortal(ctx, room.portal[0], room.portal[1], now, ready);
     for (const [gun, gx, gy] of (room.gunChoices || [])) drawGunPickup(ctx, gun, gx, gy, now, hypot(p.x - gx, p.y - gy) < 110);
     for (const L of g.lasers) if (L.state !== "active") drawRotatingLaser(ctx, L, now);
 
+    for (const w of (g.shockwaves || [])) drawShockwave(ctx, w);
+    let boss = null;
     for (const m of g.monsters) {
-        if (m.dashState === "telegraph") {
+        if (m.isBoss) boss = m;
+        if (m.hidden) {       // 사라진 암살자/순간이동 중인 보스: 희미한 흔적만
+            R.circle(ctx, m.x, m.y, m.radius * 0.6, rgb(m.color, 0.18));
+            continue;
+        }
+        if (!m.isBoss && m.dashState === "telegraph") {
             R.circle(ctx, m.x, m.y, m.radius + 8 + 6 + Math.trunc(6 * Math.abs(Math.sin(now / 80))), [255, 70, 40], 3);
             R.line(ctx, m.x, m.y, p.x, p.y, [255, 120, 60], 2);
         }
-        if (m.isBoss) drawBossShape(ctx, m, now); else drawMonsterShape(ctx, m, now);
+        const lift = m.jumpHeight || 0;
+        if (lift > 0) {      // 뛰어오른 몬스터: 바닥 그림자 + 위로 띄워서 그림
+            ctx.beginPath(); ctx.ellipse(m.x, m.y + m.radius * 0.6, m.radius * 0.9, m.radius * 0.35, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fill();
+        }
+        ctx.save(); ctx.translate(0, -lift);
+        if (m.isBoss) drawBossShape(ctx, m, now); else { drawMonsterShape(ctx, m, now); drawMonsterAccent(ctx, m, now); }
         drawMonsterStatus(ctx, m, now);
+        if (m.isBoss && m.shield > 0 && now < m.shieldUntil) R.circle(ctx, m.x, m.y, m.radius + 8, rgb([150, 210, 255], 0.55), 3);
+        if (m.isBoss && m.bstate === "rest") R.text(ctx, "💦", m.x + m.radius - 4, m.y - m.radius - 6, 18, [255, 255, 255]);
+        if (now < m.invulnUntil) R.circle(ctx, m.x, m.y, m.radius + 10 + 3 * Math.sin(now / 60), [255, 255, 255], 2);
         const bw = m.radius * 2, ratio = Math.max(0, m.hp / m.maxHp), bx = m.x - bw / 2, by = m.y - m.radius - 12;
         R.rect(ctx, bx - 1, by - 1, bw + 2, 7, [40, 0, 0], 0, 2);
         R.rect(ctx, bx, by, bw, 5, [70, 0, 0]);
         R.rect(ctx, bx, by, bw * ratio, 5, [90, 220, 90]);
+        if (m.shield > 0 && now < m.shieldUntil) R.rect(ctx, bx, by, bw * Math.min(1, m.shield / m.maxHp), 5, [150, 210, 255]);
+        ctx.restore();
     }
     for (const L of g.lasers) if (L.state === "active") drawRotatingLaser(ctx, L, now);
-    for (const b of g.bullets) drawGlowBullet(ctx, b, now);
+    for (const pt of (g.pets || [])) drawPet(ctx, pt, now);
+    for (const b of g.bullets) {
+        if (b.owner === "skill") drawSkillBullet(ctx, b, now);
+        else {
+            drawGlowBullet(ctx, b, now);
+            if (b.empower) R.circle(ctx, b.x, b.y, b.radius + 5, [230, 50, 60], 2);
+            if (b.hex) R.circle(ctx, b.x, b.y, b.radius + 3, HEXER_COLOR, 2);
+        }
+    }
+    for (const f of (g.fx || [])) drawFx(ctx, f, now, p);
     for (const z of g.zaps) drawZap(ctx, z[0], z[1], z[2], z[3]);
     for (const pt of g.particles) R.circle(ctx, pt.x, pt.y, Math.max(1, pt.size), pt.color);
     drawPlayerShape(ctx, p, now);
     if (now < p.darkShieldUntil) R.circle(ctx, p.x, p.y, p.radius + 9 + 2 * Math.sin(now / 60), GUN_ELEMENTS.dark[1], 3);
+    if (p.shield > 0 && now < p.shieldUntil) R.circle(ctx, p.x, p.y, p.radius + 12, rgb([150, 215, 255], 0.75), 3);
+    if (now < p.dmgReduceUntil) R.circle(ctx, p.x, p.y, p.radius + 16, rgb([255, 240, 140], 0.5), 2);
+    if (now < p.slowUntil) R.text(ctx, "느려짐", p.x, p.y + p.radius + 6, 12, HEXER_COLOR, { align: "center", shadow: true, bold: true });
+    if (boss) drawBossBar(ctx, boss, now);
 
     // ---- HUD ----
     R.rect(ctx, 0, 0, SCREEN_W, PLAY_TOP - 6, [26, 26, 38]);
@@ -484,6 +526,7 @@ function drawGame(ctx, g, now) {
     const sec = Math.max(0, Math.floor(g.elapsedMs / 1000));
     R.text(ctx, `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`, SCREEN_W - 20, 2, 14, [150, 150, 165], { align: "right" });
     R.text(ctx, g.input.lastType === "touch" ? "이동: 화면을 누르고 끌기 (조이패드)   (공격은 자동)" : "이동: WASD / 방향키 / 마우스 끌기   (공격은 자동)", 20, SCREEN_H - 24, 14, [170, 170, 185]);
+    drawSkillHud(ctx, p, now);
     drawMinimap(ctx, g.rooms, g.currentCoord, now);
     for (const pp of g.popups) R.text(ctx, pp.text, pp.x - 10, pp.y + pp.offset(now) - 10, 14, pp.color, { shadow: true });
     if (g.gameOver) drawCenterBanner(ctx, "GAME OVER", [255, 70, 70]);
@@ -575,11 +618,13 @@ function drawQuizScreen(ctx, q, now, touchMode) {
     if (q.phase === "summary") {
         R.text(ctx, "문제 풀이 완료!", SCREEN_W / 2, 110, 44, [255, 220, 90], { bold: true, align: "center" });
         const c = q.correct;
-        const lines = [`${QUESTIONS_PER_ROOM}문제 중 ${c}문제 정답!`, "",
+        const lines = q.skillOffer
+            ? [`${QUESTIONS_PER_ROOM}문제 중 ${c}문제 정답!`, "", "✨ 기억을 얻을 기회!", "이번에는 능력치 성장 대신 기억(스킬)을 하나 고릅니다"]
+            : [`${QUESTIONS_PER_ROOM}문제 중 ${c}문제 정답!`, "",
             `체력 +${(c * PLAYER_HP_GROWTH_PER_CORRECT).toFixed(1)}   공격력 +${(c * PLAYER_ATK_GROWTH_PER_CORRECT).toFixed(1)}`,
             `공격속도 +${(c * PLAYER_ATTACK_SPEED_GROWTH_PER_CORRECT).toFixed(2)}/초   이동속도 +${(c * PLAYER_MOVE_SPEED_GROWTH_PER_CORRECT).toFixed(2)}`];
         let y = 230;
-        for (const l of lines) { if (l) R.text(ctx, l, SCREEN_W / 2, y, 20, [230, 230, 235], { align: "center" }); y += 42; }
+        for (const l of lines) { if (l) R.text(ctx, l, SCREEN_W / 2, y, 20, l.startsWith("✨") ? [255, 225, 120] : [230, 230, 235], { align: "center", bold: l.startsWith("✨") }); y += 42; }
         if (c >= QUESTIONS_PER_ROOM) {
             R.text(ctx, q.perfectHeal > 0 ? `만점 보너스! 잃은 체력의 ${Math.round(PERFECT_QUIZ_HEAL_RATIO * 100)}% 회복  (+${q.perfectHeal.toFixed(1)})`
                                           : "만점 보너스! (체력이 이미 가득 차 있음)", SCREEN_W / 2, y + 6, 20, [255, 215, 90], { align: "center" });
@@ -667,3 +712,347 @@ function drawQuizScreen(ctx, q, now, touchMode) {
     R.text(ctx, `${cont}  다음 문제` + (targets.length ? "      " + zoomHint : ""), SCREEN_W / 2, SCREEN_H - 84, 14, [180, 200, 220], { align: "center" });
 }
 const QUIZ_EXPLAIN_TOP = 296, QUIZ_EXPLAIN_BOTTOM = SCREEN_H - 94;
+
+// =============================================================
+// 새 전투 요소 그리기: 공격 예고 / 충격파 / 지뢰 / 기억 효과 / 소환수 / 깃발
+// =============================================================
+function _conePath(ctx, x, y, ang, len, half) {
+    ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.arc(x, y, Math.max(1, len), ang - half, ang + half);
+    ctx.closePath();
+}
+function _linePoly(x1, y1, x2, y2, w) {
+    const [ux, uy] = unitTo(x1, y1, x2, y2), nx = -uy * w / 2, ny = ux * w / 2;
+    return [[x1 + nx, y1 + ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny], [x1 - nx, y1 - ny]];
+}
+// 벽 뒤 안전 지역(심판자) 계산: 한 번만 계산해서 저장
+function _fieldMask(tg, obstacles) {
+    if (tg._mask) return tg._mask;
+    const cell = 18, cells = [];
+    for (let x = PLAY_LEFT; x < PLAY_RIGHT; x += cell) for (let y = PLAY_TOP; y < PLAY_BOTTOM; y += cell) {
+        const cx = x + cell / 2, cy = y + cell / 2;
+        if (!tg.contains(cx, cy, 0, obstacles)) continue;
+        cells.push([x, y, Math.min(cell, PLAY_RIGHT - x), Math.min(cell, PLAY_BOTTOM - y)]);
+    }
+    tg._mask = cells;
+    return cells;
+}
+function drawTelegraph(ctx, tg, now, obstacles) {
+    const prog = tg.progress(now), c = tg.color;
+    const warnA = tg.damage > 0 ? 0.13 + 0.2 * prog : 0.10 + 0.1 * prog;
+    const blink = tg.fireAt - now < 200 && Math.floor(now / 60) % 2 === 0;
+    ctx.save();
+    switch (tg.kind) {
+        case "circle":
+            R.circle(ctx, tg.x, tg.y, tg.r, rgb(c, warnA));
+            R.circle(ctx, tg.x, tg.y, tg.r * prog, rgb(c, 0.22));
+            R.circle(ctx, tg.x, tg.y, tg.r, blink ? [255, 255, 255] : c, 2);
+            break;
+        case "line": {
+            const poly = _linePoly(tg.x, tg.y, tg.x2, tg.y2, tg.width);
+            ctx.beginPath(); poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+            ctx.fillStyle = rgb(c, warnA); ctx.fill();
+            ctx.strokeStyle = rgb(blink ? [255, 255, 255] : c, 0.9); ctx.lineWidth = tg.damage > 0 || tg.width > 14 ? 2 : 1.5; ctx.stroke();
+            if (tg.width <= 14) R.line(ctx, tg.x, tg.y, tg.x2, tg.y2, rgb(c, 0.35 + 0.5 * prog), Math.max(2, tg.width * prog));
+            else {
+                const ex = tg.x + (tg.x2 - tg.x) * prog, ey = tg.y + (tg.y2 - tg.y) * prog;
+                const p2 = _linePoly(tg.x, tg.y, ex, ey, tg.width);
+                ctx.beginPath(); p2.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+                ctx.fillStyle = rgb(c, 0.18); ctx.fill();
+            }
+            break;
+        }
+        case "cone":
+            _conePath(ctx, tg.x, tg.y, tg.angle, tg.len, tg.half);
+            ctx.fillStyle = rgb(c, warnA); ctx.fill();
+            ctx.strokeStyle = rgb(blink ? [255, 255, 255] : c); ctx.lineWidth = 2; ctx.stroke();
+            _conePath(ctx, tg.x, tg.y, tg.angle, tg.len * prog, tg.half);
+            ctx.fillStyle = rgb(c, 0.22); ctx.fill();
+            break;
+        case "field": {
+            if (tg.losBlock) {
+                ctx.fillStyle = rgb(c, 0.12 + 0.22 * prog);
+                for (const [x, y, w, h] of _fieldMask(tg, obstacles)) ctx.fillRect(x, y, w, h);
+            } else {
+                ctx.beginPath();
+                ctx.rect(PLAY_LEFT, PLAY_TOP, PLAY_RIGHT - PLAY_LEFT, PLAY_BOTTOM - PLAY_TOP);
+                for (const [sx, sy, sr] of tg.safes) { ctx.moveTo(sx + sr, sy); ctx.arc(sx, sy, sr, 0, Math.PI * 2, true); }
+                ctx.fillStyle = rgb(c, 0.12 + 0.22 * prog); ctx.fill("evenodd");
+                for (const [sx, sy, sr] of tg.safes) {
+                    R.circle(ctx, sx, sy, sr, [120, 255, 150], 3);
+                    R.text(ctx, "안전", sx, sy - 9, 16, [170, 255, 190], { align: "center", bold: true, shadow: true });
+                }
+            }
+            break;
+        }
+    }
+    ctx.restore();
+}
+function drawShockwave(ctx, w) {
+    const steps = 90;
+    ctx.save();
+    ctx.lineWidth = SHOCKWAVE_THICKNESS; ctx.lineCap = "butt";
+    ctx.strokeStyle = rgb(w.color, 0.75);
+    let drawing = false;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+        const a = i / steps * Math.PI * 2, gap = w.inGap(a);
+        const x = w.x + Math.cos(a) * w.r, y = w.y + Math.sin(a) * w.r;
+        if (gap) { drawing = false; continue; }
+        if (!drawing) { ctx.moveTo(x, y); drawing = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.stroke();
+    ctx.restore();
+}
+function drawMine(ctx, mi, now) {
+    const armed = now >= mi.armAt;
+    R.circle(ctx, mi.x, mi.y, 11, [50, 45, 30]);
+    R.circle(ctx, mi.x, mi.y, 11, TRAPPER_COLOR, 2);
+    const on = mi.triggered ? Math.floor(now / 70) % 2 === 0 : armed && Math.floor(now / 400) % 2 === 0;
+    R.circle(ctx, mi.x, mi.y, 4, on ? [255, 60, 40] : [120, 60, 40]);
+    if (armed) R.circle(ctx, mi.x, mi.y, 24, rgb([255, 80, 60], 0.25), 1);
+}
+function drawFx(ctx, f, now, p) {
+    const t = clamp((now - f.t0) / f.dur, 0, 1), a = 1 - t, c = f.color;
+    let x = f.x, y = f.y;
+    if (f.follow === "player") { x = p.x; y = p.y; }
+    if (f.followM && f.followM.hp > 0) { x = f.followM.x; y = f.followM.y; }
+    switch (f.kind) {
+        case "circle": R.circle(ctx, x, y, f.r * (0.7 + 0.3 * t), rgb(c, 0.45 * a)); R.circle(ctx, x, y, f.r, rgb(c, 0.8 * a), 2); break;
+        case "ring": R.circle(ctx, x, y, f.r * (0.4 + 0.6 * t), rgb(c, a), 3); break;
+        case "puff": for (let k = 0; k < 8; k++) { const an = k * Math.PI / 4; R.circle(ctx, x + Math.cos(an) * f.r * t, y + Math.sin(an) * f.r * t, 4 * a + 1, rgb(c, a)); } break;
+        case "cone": _conePath(ctx, x, y, f.angle, f.len, f.half); ctx.fillStyle = rgb(c, 0.45 * a); ctx.fill(); break;
+        case "line": R.line(ctx, x, y, f.x2, f.y2, rgb(c, 0.7 * a), f.r * (0.6 + 0.4 * a)); break;
+        case "beam": R.line(ctx, x, y, f.x2, f.y2, rgb(c, a), 3); break;
+        case "warn": {
+            R.circle(ctx, x, y, f.r, rgb(c, 0.10 + 0.15 * t)); R.circle(ctx, x, y, f.r * t, rgb(c, 0.2));
+            R.circle(ctx, x, y, f.r, rgb(c, 0.8), 2); break;
+        }
+        case "meteor": {
+            const h = 220 * (1 - t);
+            R.circle(ctx, x, y, f.r, rgb(c, 0.12 + 0.12 * t), 0); R.circle(ctx, x, y, f.r, rgb(c, 0.6), 1);
+            R.line(ctx, x + h * 0.5 + 18, y - h - 18, x + h * 0.5, y - h, rgb(c, 0.6), 4);
+            R.circle(ctx, x + h * 0.5, y - h, 8, [255, 250, 220]); break;
+        }
+        case "bolt": {
+            const pts = [[x, y - 260]];
+            for (let k = 1; k < 7; k++) pts.push([x + uniform(-12, 12), y - 260 + k * 260 / 7]);
+            pts.push([x, y]);
+            R.lines(ctx, pts, [255, 240, 120], 7 * a + 1); R.lines(ctx, pts, [255, 255, 255], 2);
+            R.circle(ctx, x, y, f.r, rgb(c, 0.4 * a)); break;
+        }
+        case "charge": R.circle(ctx, x, y, f.r * (1 - t) + 10, rgb(c, 0.9), 3); R.circle(ctx, x, y, f.r, rgb(c, 0.12)); break;
+        case "throw": {
+            const px = f.x + (f.x2 - f.x) * t, py = f.y + (f.y2 - f.y) * t - Math.sin(t * Math.PI) * 80;
+            R.circle(ctx, f.x2, f.y2, 80, rgb(c, 0.15)); R.circle(ctx, f.x2, f.y2, 80, rgb(c, 0.6), 1);
+            R.circle(ctx, px, py, f.r, c); R.circle(ctx, px, py, f.r, [220, 180, 255], 2); break;
+        }
+        case "flash": {
+            const tg = f.tg;
+            ctx.save(); ctx.globalAlpha = 0.6 * a;
+            const fc = shadeColor(c, 60);
+            if (tg.kind === "circle") R.circle(ctx, tg.x, tg.y, tg.r, fc);
+            else if (tg.kind === "line") { const poly = _linePoly(tg.x, tg.y, tg.x2, tg.y2, tg.width); R.poly(ctx, poly, fc); }
+            else if (tg.kind === "cone") { _conePath(ctx, tg.x, tg.y, tg.angle, tg.len, tg.half); ctx.fillStyle = rgb(fc); ctx.fill(); }
+            else if (tg.kind === "field") {
+                if (tg._mask) { ctx.fillStyle = rgb(fc); for (const [mx, my, mw, mh] of tg._mask) ctx.fillRect(mx, my, mw, mh); }
+                else {
+                    ctx.beginPath(); ctx.rect(PLAY_LEFT, PLAY_TOP, PLAY_RIGHT - PLAY_LEFT, PLAY_BOTTOM - PLAY_TOP);
+                    for (const [sx, sy, sr] of tg.safes) { ctx.moveTo(sx + sr, sy); ctx.arc(sx, sy, sr, 0, Math.PI * 2, true); }
+                    ctx.fillStyle = rgb(fc); ctx.fill("evenodd");
+                }
+            }
+            ctx.restore(); break;
+        }
+    }
+}
+function drawZone(ctx, z, now) {
+    const c = z.color, life = clamp((z.until - now) / 400, 0, 1);
+    switch (z.kind) {
+        case "whirl":
+            R.circle(ctx, z.x, z.y, z.r, rgb(c, 0.10 * life));
+            for (let k = 0; k < 3; k++) {
+                const a = now / 90 + k * Math.PI * 2 / 3;
+                ctx.beginPath(); ctx.arc(z.x, z.y, z.r - 6, a, a + 0.9); ctx.strokeStyle = rgb(c, 0.8 * life); ctx.lineWidth = 5; ctx.stroke();
+            }
+            break;
+        case "blades":
+            R.circle(ctx, z.x, z.y, z.r, rgb(c, 0.12 * life)); R.circle(ctx, z.x, z.y, z.r, rgb(c, 0.5 * life), 1);
+            for (let k = 0; k < 5; k++) {
+                const a = now / 70 + k * Math.PI * 2 / 5, rr = z.r * (0.35 + 0.5 * ((k % 2) ? 1 : 0.6));
+                const bx = z.x + Math.cos(a) * rr, by = z.y + Math.sin(a) * rr;
+                R.line(ctx, bx - Math.cos(a + 1.6) * 8, by - Math.sin(a + 1.6) * 8, bx + Math.cos(a + 1.6) * 8, by + Math.sin(a + 1.6) * 8, rgb([240, 240, 255], life), 3);
+            }
+            break;
+        case "breath":
+            if (z.angle !== null && z.angle !== undefined) {
+                _conePath(ctx, z.x, z.y, z.angle, 230, radians(16));
+                const gr = ctx.createRadialGradient(z.x, z.y, 10, z.x, z.y, 230);
+                gr.addColorStop(0, "rgba(255,240,150,0.75)"); gr.addColorStop(1, "rgba(255,90,30,0.15)");
+                ctx.fillStyle = gr; ctx.fill();
+            }
+            break;
+        default: {   // fire / poison / snow
+            R.circle(ctx, z.x, z.y, z.r, rgb(c, (z.kind === "snow" ? 0.18 : 0.22) * life));
+            R.circle(ctx, z.x, z.y, z.r, rgb(c, 0.6 * life), 2);
+            for (let k = 0; k < 6; k++) {
+                const a = now / 400 + k * 1.05, rr = z.r * (0.25 + 0.6 * ((k * 37) % 10) / 10);
+                const px = z.x + Math.cos(a) * rr, py = z.y + Math.sin(a) * rr - (z.kind === "fire" ? (now / 8 + k * 13) % 10 : 0);
+                R.circle(ctx, px, py, 3, rgb(shadeColor(c, 50), 0.8 * life));
+            }
+        }
+    }
+}
+function drawPet(ctx, pt, now) {
+    if (pt.kind === "dragon") {
+        const flap = Math.sin(now / 80) * 5;
+        R.poly(ctx, [[pt.x - 4, pt.y], [pt.x - 18, pt.y - 8 - flap], [pt.x - 10, pt.y + 4]], [230, 90, 40]);
+        R.poly(ctx, [[pt.x + 4, pt.y], [pt.x + 18, pt.y - 8 - flap], [pt.x + 10, pt.y + 4]], [230, 90, 40]);
+        R.circle(ctx, pt.x, pt.y, 9, [255, 130, 50]); R.circle(ctx, pt.x + 3, pt.y - 3, 2, [40, 20, 10]);
+    } else {
+        R.circle(ctx, pt.x, pt.y, 9 + Math.sin(now / 120) * 2, rgb([255, 245, 180], 0.35));
+        R.circle(ctx, pt.x, pt.y, 5, [255, 250, 210]);
+    }
+}
+function drawDecoy(ctx, d, now) {
+    R.circle(ctx, d.x, d.y, 380, rgb([255, 200, 90], 0.05));
+    R.circle(ctx, d.x, d.y, 18 + 4 * Math.sin(now / 100), [255, 200, 90], 2);
+    R.line(ctx, d.x, d.y + 14, d.x, d.y - 26, [120, 90, 60], 3);
+    const wave = Math.sin(now / 90) * 3;
+    R.poly(ctx, [[d.x, d.y - 26], [d.x + 22, d.y - 20 + wave], [d.x, d.y - 12]], [255, 90, 70]);
+}
+function drawSkillBullet(ctx, b, now) {
+    const c = b.color || [255, 255, 255], r = b.radius;
+    const rot = pts => R.rotatePoints(pts, b.x, b.y, b.dirX, b.dirY);
+    switch (b.kind) {
+        case "dagger": R.poly(ctx, rot([[r * 2.4, 0], [-r, -r * 0.7], [-r * 0.4, 0], [-r, r * 0.7]]), [230, 230, 245]); break;
+        case "bolt": case "darkbolt":
+            R.line(ctx, b.x - b.dirX * r * 3, b.y - b.dirY * r * 3, b.x + b.dirX * r, b.y + b.dirY * r, c, 5);
+            R.circle(ctx, b.x, b.y, r * 0.6, [240, 220, 255]); break;
+        case "orb": R.circle(ctx, b.x, b.y, r + 4 + Math.sin(now / 80) * 2, rgb(c, 0.35)); R.circle(ctx, b.x, b.y, r, [255, 250, 220]); break;
+        case "fireball": case "fireball_s":
+            R.circle(ctx, b.x - b.dirX * r, b.y - b.dirY * r, r * 0.9, [220, 60, 20]);
+            R.circle(ctx, b.x, b.y, r + 2, [255, 120, 40]); R.circle(ctx, b.x, b.y, r * 0.5, [255, 230, 140]); break;
+        case "phantom": R.circle(ctx, b.x, b.y, r + 4, rgb([200, 220, 255], 0.35)); R.circle(ctx, b.x, b.y, r, [230, 240, 255]); break;
+        case "missile": R.circle(ctx, b.x, b.y, r + 2, c); R.circle(ctx, b.x, b.y, r - 2, [40, 10, 60]); break;
+        default: R.circle(ctx, b.x, b.y, r + 2, c); R.circle(ctx, b.x, b.y, Math.max(1, r - 2), [255, 255, 255]);
+    }
+}
+// 새 몬스터 표시 (그림 위에 덧그림)
+function drawMonsterAccent(ctx, m, now) {
+    const cx = m.x, cy = m.y, r = m.radius;
+    switch (m.subtype) {
+        case "kamikaze": {
+            const fuse = m.aiState === "fuse";
+            R.circle(ctx, cx, cy - r - 4, 4, fuse && Math.floor(now / 70) % 2 ? [255, 255, 255] : [255, 80, 40]);
+            R.line(ctx, cx, cy - r, cx + 4, cy - r - 4, [90, 70, 50], 2); break;
+        }
+        case "turret": R.rect(ctx, cx - r * 0.5, cy - r * 0.5, r, r, [90, 90, 105], 2, 3);
+            R.line(ctx, cx, cy, cx + Math.cos(m.aiAngle) * (r + 8), cy + Math.sin(m.aiAngle) * (r + 8), [200, 200, 215], 4); break;
+        case "sniper": R.circle(ctx, cx, cy, r + 4, [120, 170, 255], 1); R.line(ctx, cx - r - 6, cy, cx + r + 6, cy, [150, 190, 255], 1); R.line(ctx, cx, cy - r - 6, cx, cy + r + 6, [150, 190, 255], 1); break;
+        case "trapper": R.circle(ctx, cx + r * 0.6, cy + r * 0.5, 4, [255, 80, 50]); break;
+        case "shaman": for (let k = 0; k < 3; k++) { const a = now / 300 + k * 2.1; R.circle(ctx, cx + Math.cos(a) * (r + 7), cy + Math.sin(a) * (r + 7), 3, SHAMAN_COLOR); } break;
+        case "hexer": R.circle(ctx, cx, cy, r + 5 + Math.sin(now / 150) * 2, rgb(HEXER_COLOR, 0.6), 2); break;
+        case "leaper": if (m.aiState !== "air") R.line(ctx, cx - r, cy + r, cx + r, cy + r, [120, 90, 50], 3); break;
+        case "egg": {
+            const left = Math.max(0, (m.hatchAt || 0) - now);
+            if (left < 1500) R.circle(ctx, cx, cy, r + 3, Math.floor(now / 120) % 2 ? [255, 120, 80] : [255, 230, 160], 2);
+            break;
+        }
+    }
+    if (m.shield > 0 && now < m.shieldUntil) R.circle(ctx, cx, cy, r + 8, rgb([150, 210, 255], 0.55), 3);
+    if (m.affixes.length) {
+        const label = m.affixes.map(affixName).join("·");
+        R.text(ctx, label, cx, cy - r - 30, 12, affixColor(m.affixes[0]), { align: "center", shadow: true, bold: true });
+    }
+}
+function drawBossBar(ctx, m, now) {
+    const w = 420, x = SCREEN_W / 2 - w / 2, y = PLAY_TOP + 8;
+    R.rect(ctx, x - 2, y - 2, w + 4, 16, [20, 10, 14], 0, 4);
+    R.rect(ctx, x, y, w * Math.max(0, m.hp / m.maxHp), 12, m.enraged ? [255, 80, 50] : [230, 70, 90], 0, 3);
+    for (const ratio of [BOSS_PHASE2_RATIO, BOSS_PHASE3_RATIO]) R.line(ctx, x + w * ratio, y - 2, x + w * ratio, y + 14, [255, 255, 255], 2);
+    const st = m.bstate === "rest" ? "  ·  지침! (받는 피해 증가)" : "";
+    R.text(ctx, `${m.bossName}  ·  ${m.phase}페이즈${st}`, SCREEN_W / 2, y + 16, 14, m.bstate === "rest" ? [140, 255, 170] : [255, 220, 200], { align: "center", shadow: true });
+}
+// HUD의 기억 칸
+const SKILL_HUD_X = 380, SKILL_HUD_Y = 46, SKILL_HUD_SIZE = 42, SKILL_HUD_GAP = 8;
+function drawSkillHud(ctx, p, now) {
+    for (let i = 0; i < SKILL_SLOTS; i++) {
+        const x = SKILL_HUD_X + i * (SKILL_HUD_SIZE + SKILL_HUD_GAP), y = SKILL_HUD_Y, S = SKILL_HUD_SIZE;
+        const s = p.skills[i];
+        R.rect(ctx, x, y, S, S, [16, 16, 24], 0, 8);
+        if (!s) { R.rect(ctx, x + 0.5, y + 0.5, S - 1, S - 1, [55, 55, 72], 1, 8); continue; }
+        const def = SKILL_BY_ID[s.id], col = skillElementColor(def.el);
+        R.rect(ctx, x, y, S, S, shadeColor(col, -120), 0, 8);
+        R.text(ctx, def.name.replace(/ /g, "").slice(0, 2), x + S / 2, y + 11, 15, col, { align: "center", bold: true });
+        const left = Math.max(0, s.readyAt - now), total = skillCooldownMs(def, s.level);
+        if (left > 0) {
+            ctx.save(); ctx.beginPath(); ctx.moveTo(x + S / 2, y + S / 2);
+            ctx.arc(x + S / 2, y + S / 2, S * 0.75, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (left / total));
+            ctx.closePath(); ctx.clip();
+            R.rect(ctx, x, y, S, S, "rgba(0,0,0,0.6)", 0, 8); ctx.restore();
+        }
+        const flash = s.castAt && now - s.castAt < 200;
+        R.rect(ctx, x + 1, y + 1, S - 2, S - 2, flash ? [255, 255, 255] : col, 2, 8);
+        if (s.level > 0) R.text(ctx, `+${s.level}`, x + S - 3, y + S - 15, 12, [255, 230, 120], { align: "right", shadow: true, bold: true });
+        if (skillHasSynergy(def, p.gun)) R.circle(ctx, x + 6, y + 6, 3, [255, 230, 120]);
+    }
+}
+
+// ---------------- 기억 고르기 화면 ----------------
+const SKILL_CARD_W = 236, SKILL_CARD_H = 236, SKILL_CARD_GAP = 18, SKILL_CARD_Y = 140;
+function skillPickRects(sp, p) {
+    const n = sp.phase === "choose" ? sp.options.length : p.skills.length;
+    const total = n * SKILL_CARD_W + (n - 1) * SKILL_CARD_GAP, x0 = SCREEN_W / 2 - total / 2;
+    const cards = [];
+    for (let i = 0; i < n; i++) cards.push([x0 + i * (SKILL_CARD_W + SKILL_CARD_GAP), SKILL_CARD_Y, SKILL_CARD_W, SKILL_CARD_H]);
+    if (sp.phase === "replace") cards.push([SCREEN_W / 2 - 130, SKILL_CARD_Y + SKILL_CARD_H + 16, 260, 40]);    // 새 기억 포기
+    const confirm = [SCREEN_W / 2 - 100, sp.phase === "replace" ? 470 : 440, 200, 52];
+    return { cards, confirm };
+}
+function drawSkillCard(ctx, rect, def, level, owned, selected, p, now, headline) {
+    const [x, y, w, h] = rect, col = skillElementColor(def.el);
+    R.rect(ctx, x, y, w, h, selected ? [44, 44, 64] : [30, 30, 44], 0, 12);
+    R.rect(ctx, x + 1.5, y + 1.5, w - 3, h - 3, selected ? [255, 220, 90] : shadeColor(col, -60), selected ? 4 : 2, 12);
+    R.rect(ctx, x + 12, y + 12, 70, 22, shadeColor(col, -110), 0, 6);
+    R.text(ctx, SKILL_ELEMENT_INFO[def.el][0], x + 47, y + 15, 13, col, { align: "center", bold: true });
+    R.text(ctx, headline, x + w - 12, y + 15, 13, owned ? [255, 220, 120] : [140, 230, 160], { align: "right", bold: true });
+    R.text(ctx, def.name, x + w / 2, y + 46, 22, [245, 245, 250], { align: "center", bold: true });
+    const cd = skillCooldownMs(def, level) / 1000;
+    R.text(ctx, `쿨타임 ${cd.toFixed(1)}초  ·  사거리 ${def.range}`, x + w / 2, y + 80, 13, [175, 180, 200], { align: "center" });
+    let yy = y + 106;
+    for (const line of wrapTextLines(ctx, def.desc, w - 28, 15).slice(0, 4)) { R.text(ctx, line, x + 14, yy, 15, [225, 225, 235]); yy += 22; }
+    if (skillHasSynergy(def, p.gun)) R.text(ctx, `★ 지금 총과 시너지 (피해 x${SKILL_SYNERGY_MULT})`, x + w / 2, y + h - 28, 13, [255, 225, 120], { align: "center" });
+}
+function drawSkillPick(ctx, sp, p, now, touchMode) {
+    ctx.fillStyle = rgb([16, 16, 24]); ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    R.rect(ctx, 40, 50, SCREEN_W - 80, SCREEN_H - 100, [26, 26, 38], 0, 14);
+    R.rect(ctx, 41, 51, SCREEN_W - 82, SCREEN_H - 102, [120, 110, 170], 2, 14);
+    const rects = skillPickRects(sp, p);
+    if (sp.phase === "choose") {
+        R.text(ctx, "✨ 기억을 하나 고르세요", SCREEN_W / 2, 74, 28, [255, 225, 120], { align: "center", bold: true });
+        R.text(ctx, "이번 방은 능력치 성장 대신 기억을 얻습니다  ·  같은 기억을 고르면 +1 강화", SCREEN_W / 2, 112, 14, [185, 185, 205], { align: "center" });
+        sp.options.forEach((id, i) => {
+            const def = SKILL_BY_ID[id], owned = p.skills.find(s => s.id === id);
+            const lvl = owned ? Math.min(SKILL_MAX_LEVEL, owned.level + 1) : 0;
+            const head = owned ? `+${owned.level} → +${lvl}` : (p.skills.length >= SKILL_SLOTS ? "NEW (교체)" : "NEW");
+            drawSkillCard(ctx, rects.cards[i], def, lvl, !!owned, sp.sel === i, p, now, head);
+        });
+    } else {
+        const nd = SKILL_BY_ID[sp.pending];
+        R.text(ctx, `기억 칸이 꽉 찼어요. '${nd.name}' 대신 버릴 기억을 고르세요`, SCREEN_W / 2, 78, 22, [255, 225, 120], { align: "center", bold: true });
+        R.text(ctx, "버린 기억은 사라집니다 (강화 수치도 함께)", SCREEN_W / 2, 112, 14, [185, 185, 205], { align: "center" });
+        p.skills.forEach((s, i) => drawSkillCard(ctx, rects.cards[i], SKILL_BY_ID[s.id], s.level, true, sp.sel === i, p, now, `보유 +${s.level}`));
+        const gi = p.skills.length, [gx, gy, gw, gh] = rects.cards[gi];
+        R.rect(ctx, gx, gy, gw, gh, sp.sel === gi ? [70, 50, 50] : [40, 34, 40], 0, 10);
+        R.rect(ctx, gx + 1, gy + 1, gw - 2, gh - 2, sp.sel === gi ? [255, 220, 90] : [120, 90, 100], 2, 10);
+        R.text(ctx, `'${nd.name}' 받지 않기`, gx + gw / 2, gy + 11, 16, [235, 210, 210], { align: "center" });
+    }
+    const [bx, by, bw, bh] = rects.confirm, on = sp.sel !== null;
+    R.rect(ctx, bx, by, bw, bh, on ? [47, 125, 79] : [52, 52, 66], 0, 10);
+    R.rect(ctx, bx + 1, by + 1, bw - 2, bh - 2, on ? [140, 230, 160] : [80, 80, 100], 2, 10);
+    const label = sp.phase === "choose" ? "선택" : (sp.sel === p.skills.length ? "받지 않기" : "버리고 교체");
+    R.text(ctx, label, bx + bw / 2, by + 13, 22, on ? [255, 255, 255] : [130, 130, 150], { align: "center", bold: true });
+    R.text(ctx, touchMode ? "카드를 누른 뒤 아래 버튼" : "←/→ 또는 1~4로 고르고 Enter  (마우스로 눌러도 됨)", SCREEN_W / 2, SCREEN_H - 84, 14, [180, 200, 220], { align: "center" });
+}

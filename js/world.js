@@ -36,6 +36,9 @@ function randomMonsterSubtype(mtype, stage) {
         if (stage >= EXPLODER_UNLOCK_STAGE) pool.push("exploder", "exploder");
         if (stage >= BRUTE_UNLOCK_STAGE) pool.push("brute", "brute");
         if (stage >= SPLITTER_UNLOCK_STAGE) pool.push("splitter", "splitter");
+        if (stage >= KAMIKAZE_UNLOCK_STAGE) pool.push("kamikaze", "kamikaze");
+        if (stage >= LEAPER_UNLOCK_STAGE) pool.push("leaper", "leaper");
+        if (stage >= ASSASSIN_UNLOCK_STAGE) pool.push("assassin", "assassin");
         return choice(pool);
     }
     const pool = RANGED_SUBTYPE_POOL.slice();
@@ -43,6 +46,11 @@ function randomMonsterSubtype(mtype, stage) {
     if (stage >= BURST3_UNLOCK_STAGE) pool.push("burst3", "burst3");
     if (stage >= MORTAR_UNLOCK_STAGE) pool.push("mortar", "mortar");
     if (stage >= SPITTER_UNLOCK_STAGE) pool.push("spitter", "spitter");
+    if (stage >= TURRET_UNLOCK_STAGE) pool.push("turret", "turret");
+    if (stage >= SNIPER_UNLOCK_STAGE) pool.push("sniper", "sniper");
+    if (stage >= TRAPPER_UNLOCK_STAGE) pool.push("trapper", "trapper");
+    if (stage >= SHAMAN_UNLOCK_STAGE) pool.push("shaman");
+    if (stage >= HEXER_UNLOCK_STAGE) pool.push("hexer", "hexer");
     return choice(pool);
 }
 function randomMonsterFamily(stage) {
@@ -71,7 +79,23 @@ class Player {
         this.darkReadyAt = 0;
         this.isMoving = false;
         this.animOffset = randInt(0, 1000);
+        // 상태 이상 / 기억
+        this.slowUntil = 0; this.slowPct = 0;
+        this.skills = [];              // [{id, level, readyAt}]
+        this.nextSkillAt = 0;
+        this.empower = null;           // 출혈: 다음 총알 강화
+        this.shield = 0; this.shieldUntil = 0; this.shieldBreak = null;
+        this.dmgReduce = 0; this.dmgReduceUntil = 0;
+        this.aspdBuffs = [];           // [{mult, until}]
+        this.volleyUntil = 0; this.volleyDmg = 0;
+        this.trailUntil = 0; this.trailNext = 0; this.trailSk = null; this.trailDmg = 0;
+        this.skillBoost = 0;
     }
+}
+function playerAspdMult(p, now) {
+    let m = 1;
+    for (const b of p.aspdBuffs) if (now < b.until) m *= b.mult;
+    return m;
 }
 
 // ---------------- 몬스터 ----------------
@@ -101,6 +125,14 @@ class Monster {
         this.slowUntil = 0; this.slowPct = 0;
         this.lightStacks = 0;
         this.stunUntil = 0; this.stunImmuneUntil = 0;
+        // 새 몬스터 / 엘리트 / 기억 상태
+        this.affixes = [];            // 엘리트 접두사 키 목록
+        this.shield = 0; this.shieldUntil = 0;
+        this.hidden = false; this.airborne = false; this.immovable = false;
+        this.aiState = "idle"; this.aiUntil = 0; this.aiNext = 0; this.aiAngle = 0;
+        this.dotDamage = 0; this.dotUntil = 0; this.dotNext = 0;     // 출혈/독 (기억)
+        this.marks = {};              // 기억 표식
+        this.invulnUntil = 0;
 
         const P = this.power;
         if (mtype === "melee") {
@@ -110,6 +142,10 @@ class Monster {
                 case "exploder": this.radius = 15; this.hp = scaleHp(EXPLODER_BASE_HP, P); this.speed = 2.0; this.color = EXPLODER_COLOR; this.touchDamage = scaleDmg(EXPLODER_TOUCH_DMG, P); break;
                 case "brute": this.radius = 18; this.hp = scaleHp(BRUTE_BASE_HP, P); this.speed = 1.3; this.color = BRUTE_COLOR; this.touchDamage = scaleDmg(BRUTE_TOUCH_DMG, P); break;
                 case "splitter": this.radius = 14; this.hp = scaleHp(SPLITTER_BASE_HP, P); this.speed = 2.1; this.color = SPLITTER_COLOR; this.touchDamage = scaleDmg(SPLITTER_TOUCH_DMG, P); break;
+                case "kamikaze": this.radius = 13; this.hp = scaleHp(KAMIKAZE_BASE_HP, P); this.speed = 2.6; this.color = KAMIKAZE_COLOR; this.touchDamage = scaleDmg(KAMIKAZE_TOUCH_DMG, P); this.bulletDamage = scaleDmg(KAMIKAZE_BLAST_DMG, P); break;
+                case "leaper": this.radius = 15; this.hp = scaleHp(LEAPER_BASE_HP, P); this.speed = 1.6; this.color = LEAPER_COLOR; this.touchDamage = scaleDmg(LEAPER_TOUCH_DMG, P); this.bulletDamage = scaleDmg(LEAPER_SLAM_DMG, P); break;
+                case "assassin": this.radius = 14; this.hp = scaleHp(ASSASSIN_BASE_HP, P); this.speed = 2.0; this.color = ASSASSIN_COLOR; this.touchDamage = scaleDmg(ASSASSIN_TOUCH_DMG, P); this.bulletDamage = scaleDmg(ASSASSIN_SLASH_DMG, P); break;
+                case "egg": this.radius = 14; this.hp = scaleHp(EGG_BASE_HP, P); this.speed = 0; this.color = EGG_COLOR; this.touchDamage = 0; this.immovable = true; break;
                 default: this.radius = 14; this.hp = scaleHp(MELEE_BASE_HP, P); this.speed = 2.3; this.color = [220, 60, 60]; this.touchDamage = scaleDmg(MELEE_BASE_TOUCH_DMG, P);
             }
         } else if (mtype === "summoner") {
@@ -123,6 +159,11 @@ class Monster {
                 case "homing": this.hp = scaleHp(HOMING_BASE_HP, P); this.speed = 1.5; this.color = HOMING_COLOR; this.shootCooldown = HOMING_SHOOT_COOLDOWN_MS; this.bulletDamage = scaleDmg(HOMING_BULLET_DMG, P); this.touchDamage = scaleDmg(HOMING_TOUCH_DMG, P); break;
                 case "burst3": this.hp = scaleHp(BURST3_BASE_HP, P); this.speed = 1.6; this.color = BURST3_COLOR; this.shootCooldown = BURST3_SHOOT_COOLDOWN_MS; this.bulletDamage = scaleDmg(BURST3_BULLET_DMG, P); break;
                 case "mortar": this.hp = scaleHp(MORTAR_BASE_HP, P); this.speed = 1.3; this.color = MORTAR_COLOR; this.shootCooldown = MORTAR_SHOOT_COOLDOWN_MS; this.bulletDamage = scaleDmg(MORTAR_BULLET_DMG, P); break;
+                case "turret": this.radius = 16; this.hp = scaleHp(TURRET_BASE_HP, P); this.speed = 0; this.color = TURRET_COLOR; this.shootCooldown = TURRET_REST_MS; this.bulletDamage = scaleDmg(TURRET_BULLET_DMG, P); this.touchDamage = scaleDmg(TURRET_TOUCH_DMG, P); this.immovable = true; break;
+                case "sniper": this.hp = scaleHp(SNIPER_BASE_HP, P); this.speed = 1.5; this.color = SNIPER_COLOR; this.shootCooldown = SNIPER_COOLDOWN_MS; this.bulletDamage = scaleDmg(SNIPER_BULLET_DMG, P); break;
+                case "trapper": this.hp = scaleHp(TRAPPER_BASE_HP, P); this.speed = 1.9; this.color = TRAPPER_COLOR; this.shootCooldown = TRAPPER_MINE_GAP_MS; this.bulletDamage = scaleDmg(TRAPPER_MINE_DMG, P); break;
+                case "shaman": this.hp = scaleHp(SHAMAN_BASE_HP, P); this.speed = 1.4; this.color = SHAMAN_COLOR; this.shootCooldown = SHAMAN_CAST_MS; this.bulletDamage = 0; this.reviveUsed = false; break;
+                case "hexer": this.hp = scaleHp(HEXER_BASE_HP, P); this.speed = 1.5; this.color = HEXER_COLOR; this.shootCooldown = HEXER_COOLDOWN_MS; this.bulletDamage = scaleDmg(HEXER_BULLET_DMG, P); break;
                 case "spitter": this.hp = scaleHp(SPITTER_BASE_HP, P); this.speed = 1.5; this.color = SPITTER_COLOR; this.shootCooldown = SPITTER_SHOOT_COOLDOWN_MS; this.bulletDamage = scaleDmg(HAZARD_DAMAGE, P); this.touchDamage = scaleDmg(SPITTER_TOUCH_DMG, P); break;
                 default: this.hp = scaleHp(RANGED_BASE_HP, P); this.speed = 1.6; this.color = [165, 70, 225]; this.shootCooldown = 1400; this.bulletDamage = scaleDmg(RANGED_SINGLE_BULLET_DMG, P);
             }
@@ -136,9 +177,17 @@ class Monster {
         }
         this.speed = scaleMonsterSpeed(this.speed, P);
         if (this.shootCooldown) this.shootCooldown = scaleMonsterCooldown(this.shootCooldown, P);
+        if (this.isElite) this.affixes = rollEliteAffixes(this.stage, this.subtype);
+        if (this.affixes.includes("swift")) {
+            this.speed *= ELITE_SWIFT_SPEED;
+            if (this.shootCooldown) this.shootCooldown = Math.max(300, pyRound(this.shootCooldown * ELITE_SWIFT_COOLDOWN));
+        }
         this.maxHp = this.hp;
         this.snapshotRageBaseStats();
     }
+    hasAffix(a) { return this.affixes.includes(a); }
+    // 총/기억이 노릴 수 있는지 (사라진 암살자 등은 안 됨)
+    get targetable() { return !this.hidden; }
     snapshotRageBaseStats() {
         this.rageBaseSpeed = this.speed;
         this.rageBaseDashSpeed = this.dashSpeed || 0;
@@ -147,42 +196,44 @@ class Monster {
     }
 }
 
-function pickBossVariant(stage) {
-    const v = ["brute"];
-    if (stage >= BOSS_SWARM_UNLOCK_STAGE) v.push("swarm");
-    if (stage >= BOSS_VENOM_UNLOCK_STAGE) v.push("venom");
-    if (stage >= BOSS_SNIPER_UNLOCK_STAGE) v.push("sniper");
-    if (stage >= BOSS_LASER_UNLOCK_STAGE) v.push("laser");
-    if (stage >= BOSS_ARTILLERY_UNLOCK_STAGE) v.push("artillery");
-    if (stage >= BOSS_MIRROR_UNLOCK_STAGE) v.push("mirror");
-    return choice(v);
+function rollEliteAffixes(stage, subtype) {
+    let pool = ELITE_AFFIXES.map(a => a[0]);
+    if (subtype === "turret" || subtype === "egg") pool = pool.filter(a => a !== "swift" && a !== "fire");
+    const n = stage >= ELITE_TWO_AFFIX_STAGE ? 2 : 1;
+    return sample(pool, n);
 }
-const BOSS_VARIANT_COLORS = {
-    brute: [235, 165, 30], swarm: [90, 210, 110], venom: [140, 220, 70], sniper: [80, 160, 235],
-    laser: [255, 100, 100], artillery: [190, 80, 210], mirror: [230, 230, 110],
-};
+function eliteSpawnChance(stage) { return Math.min(ELITE_CHANCE_MAX, ELITE_SPAWN_CHANCE + ELITE_CHANCE_PER_STAGE * (stage - 1)); }
+function affixName(key) { const a = ELITE_AFFIXES.find(x => x[0] === key); return a ? a[1] : key; }
+function affixColor(key) { const a = ELITE_AFFIXES.find(x => x[0] === key); return a ? a[2] : [255, 255, 255]; }
 
 class Boss extends Monster {
     constructor(x, y, stage, variant, power) {
         super(x, y, "ranged", stage, "single", false, power);
         this.isBoss = true;
         this.variant = variant || pickBossVariant(this.stage);
-        this.hp = scaleHp(BOSS_BASE_HP, this.power);
+        // 혼합 보스: 두 보스의 패턴을 섞는다
+        this.parts = this.variant === "hybrid" ? pickHybridParts(this.stage) : [this.variant];
+        const defs = this.parts.map(v => BOSS_DEFS[v]);
+        const hpMult = Math.max(...defs.map(d => d.hpMult || 1)) * (this.variant === "hybrid" ? 1.15 : 1);
+        this.hp = pyRound(scaleHp(BOSS_BASE_HP, this.power) * hpMult);
         this.maxHp = this.hp;
         this.radius = BOSS_RADIUS;
-        this.speed = scaleMonsterSpeed(1.3, this.power);
-        this.baseColor = BOSS_VARIANT_COLORS[this.variant] || [235, 165, 30];
+        this.speed = scaleMonsterSpeed(1.3 * (defs[0].speed || 1), this.power);
+        this.baseColor = defs.length > 1
+            ? defs[0].color.map((c, i) => Math.round((c + defs[1].color[i]) / 2)) : defs[0].color;
         this.color = this.baseColor;
+        this.bossName = defs.length > 1 ? `혼돈: ${defs[0].name} + ${defs[1].name}` : defs[0].name;
         this.bulletDamage = scaleDmg(BOSS_BASE_BULLET_DMG, this.power);
         this.touchDamage = scaleDmg(BOSS_BASE_TOUCH_DMG, this.power);
-        this.patternToggle = 0;
         this.dashSpeed = scaleMonsterSpeed(BOSS_DASH_SPEED, this.power);
         this.shootCooldownMs = scaleMonsterCooldown(BOSS_SHOOT_COOLDOWN_MS, this.power);
-        this.enraged = false; this.enrageJustTriggered = false;
+        this.enraged = false;
         this.summonCount = 0; this.nextSummonTime = 0;
-        this.nextVolleyTime = 0; this.nextCloneTime = 0;
         this.nextPoolTime = 0; this.nextTrailTime = 0;
         this.laser = null;
+        // 패턴 상태
+        this.phase = 1; this.bstate = "move"; this.bUntil = 0; this.gen = null; this.genWait = 0;
+        this.lastPattern = null; this.patternName = null; this.moveShotDone = false;
         this.snapshotRageBaseStats();
     }
 }
@@ -197,12 +248,13 @@ class Bullet {
 }
 
 class Hazard {
-    constructor(x, y, radius, damage, now, color) {
+    constructor(x, y, radius, damage, now, color, warnMs, activeMs) {
         this.x = x; this.y = y; this.radius = radius; this.damage = damage;
         this.color = color || HAZARD_COLOR;
-        this.activeAt = now + HAZARD_WARN_MS;
-        this.expireAt = this.activeAt + HAZARD_ACTIVE_MS;
+        this.activeAt = now + (warnMs === undefined || warnMs === null ? HAZARD_WARN_MS : warnMs);
+        this.expireAt = this.activeAt + (activeMs || HAZARD_ACTIVE_MS);
         this.nextTickTime = 0;
+        this.slowPct = 0;          // 밟으면 느려지는 장판 (얼음 등)
     }
     isActive(now) { return this.activeAt <= now && now < this.expireAt; }
     isAlive(now) { return now < this.expireAt; }
@@ -230,15 +282,21 @@ function rayExitLength(cx, cy, angle, maxLen) {
 }
 
 class RotatingLaser {
-    constructor(cx, cy, damage, now, beamCount) {
+    // opts: { length, width, warnMs, activeMs, restMs, angularSpeed }  (엘리트 '비전'의 짧은 광선 등)
+    constructor(cx, cy, damage, now, beamCount, opts) {
+        opts = opts || {};
         this.cx = cx; this.cy = cy; this.damage = damage;
         this.beamCount = Math.max(1, beamCount || 1);
-        this.length = hypot(PLAY_RIGHT - PLAY_LEFT, PLAY_BOTTOM - PLAY_TOP);
+        this.length = opts.length || hypot(PLAY_RIGHT - PLAY_LEFT, PLAY_BOTTOM - PLAY_TOP);
         this.angle = uniform(0, Math.PI * 2);
-        this.angularSpeed = choice([-1, 1]) * LASER_ANGULAR_SPEED;
-        this.width = LASER_WIDTH;
-        this.state = "warning"; this.stateUntil = now + LASER_WARN_MS;
+        this.angularSpeed = choice([-1, 1]) * (opts.angularSpeed || LASER_ANGULAR_SPEED);
+        this.width = opts.width || LASER_WIDTH;
+        this.warnMs = opts.warnMs || LASER_WARN_MS;
+        this.activeMs = opts.activeMs || LASER_ACTIVE_MS;
+        this.restMs = opts.restMs || LASER_REST_MS;
+        this.state = "warning"; this.stateUntil = now + this.warnMs;
         this.nextTickTime = 0;
+        this.owner = null;
     }
     beamAngles() {
         const out = [];
@@ -248,10 +306,10 @@ class RotatingLaser {
     update(now) {
         if (this.state !== "rest") this.angle += this.angularSpeed;
         if (now >= this.stateUntil) {
-            if (this.state === "warning") { this.state = "active"; this.stateUntil = now + LASER_ACTIVE_MS; }
-            else if (this.state === "active") { this.state = "rest"; this.stateUntil = now + LASER_REST_MS; }
+            if (this.state === "warning") { this.state = "active"; this.stateUntil = now + this.activeMs; }
+            else if (this.state === "active") { this.state = "rest"; this.stateUntil = now + this.restMs; }
             else {
-                this.state = "warning"; this.stateUntil = now + LASER_WARN_MS;
+                this.state = "warning"; this.stateUntil = now + this.warnMs;
                 this.angularSpeed = Math.abs(this.angularSpeed) * choice([-1, 1]);
             }
         }
@@ -695,7 +753,7 @@ function checkRoomTransition(p, room) {
 // =============================================================
 function nearestMonster(p, ms) {
     let best = null, bd = Infinity;
-    for (const m of ms) { const d = hypot(m.x - p.x, m.y - p.y); if (d < bd) { bd = d; best = m; } }
+    for (const m of ms) { if (!m.targetable) continue; const d = hypot(m.x - p.x, m.y - p.y); if (d < bd) { bd = d; best = m; } }
     return best;
 }
 function spawnMinion(x, y, stage, power) {
@@ -747,10 +805,10 @@ function resetMonsterRage(m, now) {
     m.lastDamagedTime = now;
     if (m.rageStacks) { m.rageStacks = 0; applyRageStats(m); }
 }
-function spawnHazard(hazards, x, y, radius, damage, now, color) {
+function spawnHazard(hazards, x, y, radius, damage, now, color, warnMs, activeMs) {
     x = clamp(x, PLAY_LEFT + radius * 0.4, PLAY_RIGHT - radius * 0.4);
     y = clamp(y, PLAY_TOP + radius * 0.4, PLAY_BOTTOM - radius * 0.4);
-    const h = new Hazard(x, y, radius, damage, now, color);
+    const h = new Hazard(x, y, radius, damage, now, color, warnMs, activeMs);
     hazards.push(h);
     if (hazards.length > MAX_HAZARDS) hazards.shift();
     return h;
@@ -861,87 +919,6 @@ function updateSummonerMonster(m, p, monsters, now, canAttack) {
         m.nextSummonTime = now + SUMMONER_SUMMON_COOLDOWN_MS;
     }
 }
-function updateBossMonster(m, p, bullets, monsters, now, canAttack, hazards, lasers) {
-    if (!m.enraged && m.hp <= m.maxHp * BOSS_ENRAGE_HP_RATIO) {
-        m.enraged = true; m.enrageJustTriggered = true;
-        m.rageBaseSpeed *= BOSS_ENRAGE_SPEED_MULT;
-        m.rageBaseDashSpeed *= BOSS_ENRAGE_DASH_SPEED_MULT;
-        m.shootCooldownMs = Math.max(300, Math.trunc(m.shootCooldownMs * BOSS_ENRAGE_COOLDOWN_MULT));
-        applyRageStats(m);
-        m.color = BOSS_ENRAGE_COLOR;
-    }
-    if (m.variant === "laser") {
-        if (!m.laser) { m.laser = new RotatingLaser(m.x, m.y, scaleDmg(LASER_DAMAGE, m.power), now, BOSS_LASER_BEAM_COUNT); lasers.push(m.laser); }
-        else { m.laser.cx = m.x; m.laser.cy = m.y; }
-    }
-    if (m.variant === "venom" && canAttack) {
-        if (now >= m.nextTrailTime) {
-            spawnHazard(hazards, m.x, m.y, HAZARD_RADIUS * 0.8, scaleDmg(HAZARD_DAMAGE, m.power), now, m.baseColor);
-            m.nextTrailTime = now + BOSS_VENOM_TRAIL_COOLDOWN_MS;
-        }
-        if (now >= m.nextPoolTime) {
-            const [tx, ty] = predictPlayerPoint(p, HAZARD_AIM_LEAD_MS / (1000 / FPS), PREDICT_BOSS_FACTOR, PREDICT_BULLET_MAX_FRAMES);
-            spawnHazard(hazards, tx, ty, HAZARD_RADIUS, scaleDmg(HAZARD_DAMAGE, m.power), now, m.baseColor);
-            m.nextPoolTime = now + BOSS_VENOM_POOL_COOLDOWN_MS;
-        }
-    }
-    if (m.variant === "swarm" && canAttack && m.summonCount < BOSS_SWARM_MAX_SUMMONS && now >= m.nextSummonTime) {
-        if (monsters.length < MAX_MONSTERS_PER_ROOM + 4) { spawnNear(m, monsters, now, 30); m.summonCount++; }
-        m.nextSummonTime = now + BOSS_SWARM_SUMMON_COOLDOWN_MS;
-    }
-    if (m.variant === "mirror" && canAttack && now >= m.nextCloneTime) {
-        const clones = monsters.filter(o => o.isMirrorClone).length;
-        if (clones < BOSS_MIRROR_MAX_CLONES && monsters.length < MAX_MONSTERS_PER_ROOM + 4) {
-            const c = new Monster(m.x, m.y, "ranged", m.stage, "single", false, m.power);
-            c.hp = Math.max(1, pyRound(c.hp * BOSS_MIRROR_CLONE_HP_MULT)); c.maxHp = c.hp;
-            c.color = m.baseColor; c.isMirrorClone = true; c.expireAt = now + BOSS_MIRROR_CLONE_LIFETIME_MS;
-            c.lastShotTime = now; c.lastTouchTime = now; c.lastDamagedTime = now;
-            c.snapshotRageBaseStats();
-            monsters.push(c);
-        }
-        m.nextCloneTime = now + BOSS_MIRROR_CLONE_COOLDOWN_MS;
-    }
-    const mdx = p.x - m.x, mdy = p.y - m.y, mdist = hypot(mdx, mdy);
-    if (m.dashState === "cooldown" && now >= m.dashStateUntil) m.dashState = "chase";
-    if (m.dashState === "dashing") {
-        m.x += m.dashDir[0] * m.dashSpeed; m.y += m.dashDir[1] * m.dashSpeed;
-        if (now >= m.dashStateUntil) { m.dashState = "cooldown"; m.dashStateUntil = now + BOSS_DASH_COOLDOWN_MS; }
-    } else if (m.dashState === "telegraph") {
-        if (now >= m.dashStateUntil) {
-            m.dashDir = predictedDirection(m, p, m.dashSpeed, PREDICT_BOSS_FACTOR, PREDICT_DASH_MAX_FRAMES) || [0, 0];
-            m.dashState = "dashing"; m.dashStateUntil = now + BOSS_DASH_DURATION_MS;
-        }
-    } else {
-        keepDistance(m, p, 260);
-        if (m.variant !== "sniper" && m.variant !== "artillery" && m.dashState === "chase" && canAttack && mdist < BOSS_DASH_TRIGGER_RANGE) {
-            m.dashState = "telegraph"; m.dashStateUntil = now + BOSS_DASH_TELEGRAPH_MS;
-        }
-    }
-    if (mdist > 0 && m.dashState !== "dashing") {
-        const aim = predictedDirection(m, p, RANGED_BULLET_SPEED, PREDICT_BOSS_FACTOR, PREDICT_BULLET_MAX_FRAMES);
-        const [ndx, ndy] = aim || [mdx / mdist, mdy / mdist];
-        if (m.burstPending) {
-            if (now >= m.burstFireTime) {
-                bullets.push(new Bullet(m.x, m.y, m.burstDir[0], m.burstDir[1], RANGED_BULLET_SPEED, m.bulletDamage, "monster"));
-                m.burstPending = false; m.lastShotTime = now;
-            }
-        } else if (canAttack && now - m.lastShotTime > m.shootCooldownMs) {
-            if (m.patternToggle === 0) {
-                fireSpreadBullets(bullets, m.x, m.y, ndx, ndy, RANGED_BULLET_SPEED, m.bulletDamage, "monster", BOSS_SPREAD_COUNT, BOSS_SPREAD_ANGLE);
-                m.lastShotTime = now;
-            } else {
-                bullets.push(new Bullet(m.x, m.y, ndx, ndy, RANGED_BULLET_SPEED, m.bulletDamage, "monster", m.variant === "sniper"));
-                m.burstPending = true; m.burstFireTime = now + RANGED_DOUBLE_BURST_DELAY_MS; m.burstDir = [ndx, ndy];
-            }
-            m.patternToggle = 1 - m.patternToggle;
-        }
-    }
-    if (m.variant === "artillery" && canAttack && now >= m.nextVolleyTime) {
-        fireRingBullets(bullets, m.x, m.y, RANGED_BULLET_SPEED * 0.75, m.bulletDamage, "monster", BOSS_ARTILLERY_VOLLEY_COUNT);
-        m.nextVolleyTime = now + BOSS_ARTILLERY_VOLLEY_COOLDOWN_MS;
-    }
-}
-
 class Particle {
     constructor(x, y, vx, vy, color, t, size) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.color = color; this.t = t; this.size = size; }
     alive(now) { return now - this.t < PARTICLE_LIFETIME_MS; }
