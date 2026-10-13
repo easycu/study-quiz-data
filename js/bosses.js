@@ -119,15 +119,19 @@ function startBossPhase(g, m, phase, now) {
     m.invulnUntil = m.bUntil;
     // 보스 쪽 예고는 취소 (페이즈 전환 중 억울하게 맞지 않게)
     g.telegraphs = g.telegraphs.filter(t => t.owner !== m);
-    const zz = activeZigzag(g, m);
-    if (zz) {
-        const w = new Shockwave(m.x, m.y, zz.speed, zz.maxR, Math.max(1, pyRound(m.bulletDamage * 0.6)), null, m.baseColor, m);
-        w.seg = zigzagSeg(g, m, zz.seg); w.x = zz.x; w.y = zz.y;
-        g.shockwaves.push(w);
-    } else {
-        g.shockwaves.push(new Shockwave(m.x, m.y, 5, 520, Math.max(1, pyRound(m.bulletDamage * 0.6)),
-            ringGaps(g, m, SHOCKWAVE_GAP_COUNT, SHOCKWAVE_GAP_HALF + 0.06, activeRingGaps(g, m), 5), m.baseColor, m));
-    }
+    // 페이즈 전환 충격파도 지그재그: 퍼지는 중인 지그재그가 있으면 그 다음 칸으로 이어서,
+    // 없으면 보스 자리에서 엇갈리는 고리 2개
+    const zz = activeZigzag(g, m), dmg = Math.max(1, pyRound(m.bulletDamage * 0.6));
+    const cx = zz ? zz.x : m.x, cy = zz ? zz.y : m.y;
+    let seg = zz ? zz.seg : null;
+    const push = gg => {
+        seg = zigzagSeg(gg, m, seg);
+        const w = new Shockwave(cx, cy, SHOCKWAVE_ZIGZAG_SPEED, 640, dmg, null, m.baseColor, m);
+        w.seg = seg;
+        gg.shockwaves.push(w);
+    };
+    push(g);
+    if (!zz) g.addTimer(SHOCKWAVE_ZIGZAG_GAP_MS, push);
     g.shake(SCREEN_SHAKE_BOSS_DASH, SCREEN_SHAKE_DURATION_MS * 3);
     g.popup(m.x, m.y - m.radius - 34, phase === 3 ? "3페이즈 - 분노!" : "2페이즈!", [255, 120, 60]);
     if (phase === 3) {
@@ -246,8 +250,7 @@ const BOSS_PATTERNS = {
                 yield 0;
             }
             m.x = to[0]; m.y = to[1]; m.airborne = false; m.jumpHeight = 0;
-            g.shake(SCREEN_SHAKE_BOSS_DASH);
-            g.shockwaves.push(new Shockwave(m.x, m.y, 4.5, 260, Math.max(1, pyRound(m.bulletDamage * 0.8)), ringGaps(g, m, 2, 0.32, activeRingGaps(g, m), 4.5), m.baseColor, m));
+            g.shake(SCREEN_SHAKE_BOSS_DASH);      // 착지: 빨간 원 피해만 (충격파 없음)
             yield 280;
         }
     },
