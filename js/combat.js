@@ -96,11 +96,16 @@ class Shockwave {
 // 보스 충격파 고리의 빈틈: 하나는 플레이어 쪽 가까이에 두고 나머지는 고르게 나눈다
 //   (빈틈이 반대편에만 있어서 아무리 빨라도 못 피하는 일이 없게)
 //   same: 이미 퍼지고 있는 고리의 빈틈을 그대로 쓰면 연달아 나와도 같은 자리에서 피할 수 있다
-function ringGaps(g, m, n, halfWidth, same) {
-    if (same) return same.map(([c, h]) => [c, Math.max(h, halfWidth)]);
-    const T = g.aimFor(m);
-    const base = Math.atan2(T.y - m.y, T.x - m.x) + uniform(-SHOCKWAVE_GAP_AIM_JITTER, SHOCKWAVE_GAP_AIM_JITTER);
-    const out = [];
+function ringGaps(g, m, n, halfWidth, same, speed, shift) {
+    if (same) return same.map(([c, h]) => [c + (shift || 0), Math.max(h, halfWidth)]);
+    const T = g.aimFor(m), p = g.player;
+    const ang = Math.atan2(T.y - m.y, T.x - m.x), d = Math.max(40, hypot(T.x - m.x, T.y - m.y));
+    // 고리가 플레이어에게 닿을 때까지 걸어서 갈 수 있는 옆 거리
+    const frames = Math.max(8, (d - 10) / (speed || 4));
+    const pSpeed = p.speed * (g.now < p.slowUntil ? 1 - (p.slowPct || 0) : 1);
+    const reachAng = Math.min(Math.PI / n, pSpeed * frames * SHOCKWAVE_GAP_REACH_SAFETY / d);
+    const off = reachAng * uniform(SHOCKWAVE_GAP_REACH_MIN, SHOCKWAVE_GAP_REACH_MAX) * (Math.random() < 0.5 ? -1 : 1);
+    const base = ang + off, out = [];
     for (let i = 0; i < n; i++) out.push([base + i * Math.PI * 2 / n, halfWidth]);
     return out;
 }

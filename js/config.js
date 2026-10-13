@@ -155,8 +155,12 @@ const BOSS_GOLEM_UNLOCK_STAGE = 2, BOSS_MAGE_UNLOCK_STAGE = 4, BOSS_BLADE_UNLOCK
 const BOSS_QUEEN_UNLOCK_STAGE = 6, BOSS_JUDGE_UNLOCK_STAGE = 8, BOSS_HYBRID_UNLOCK_STAGE = 10, BOSS_HYBRID_CHANCE = 0.4;
 const EGG_BASE_HP = 16, EGG_HATCH_MS = 4200, EGG_COLOR = [235, 225, 180];
 const SHOCKWAVE_THICKNESS = 16;
-// 충격파 고리 빈틈: 개수 / 빈틈 절반 너비(라디안, 0.36 = 약 41도 너비) / 플레이어 쪽 빈틈 흔들림
-const SHOCKWAVE_GAP_COUNT = 4, SHOCKWAVE_GAP_HALF = 0.36, SHOCKWAVE_GAP_AIM_JITTER = 0.3;
+// 충격파 고리 빈틈: 개수 / 빈틈 절반 너비(라디안, 0.22 = 약 25도 너비)
+//   가장 가까운 빈틈은 플레이어 자리에서 "고리가 닿기 전에 걸어서 갈 수 있는 거리"의 55~85% 만큼 떨어진 곳에 생긴다
+//   -> 가만히 있으면 맞고, 바로 움직이면 피할 수 있다
+const SHOCKWAVE_GAP_COUNT = 3, SHOCKWAVE_GAP_HALF = 0.22;
+const SHOCKWAVE_GAP_REACH_MIN = 0.55, SHOCKWAVE_GAP_REACH_MAX = 0.85, SHOCKWAVE_GAP_REACH_SAFETY = 0.6;
+const SHOCKWAVE_DOUBLE_SHIFT = 0.38;        // 연달아 퍼지는 두 번째 고리는 빈틈이 이만큼(라디안) 옆으로 옮겨진다
 // 연달아 쓰지 않는 원형 패턴 (한 번 쓰면 다음 패턴은 원형이 아닌 것)
 const BOSS_RING_PATTERNS = ["slamRing", "stompRing", "quake", "ringShot"];
 
