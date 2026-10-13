@@ -78,3 +78,8 @@ input.bad { border-color: #ff6060; background: #4a2030; }
   padding: 0; font-size: 24px; border-radius: 12px; background: rgba(40, 40, 60, 0.85); z-index: 2; }
 #zoomHint { position: absolute; left: 0; right: 0; bottom: 6px; margin: 0; text-align: center; color: #9a9ab8;
   font-size: 12px; pointer-events: none; }
+
+/* ---- 화면·소리 설정 버튼 ---- */
+.opts button.opt { min-width: 150px; font-size: 15px; padding: 8px 12px; }
+.opts button.opt.on { background: #2f5f4a; border-color: #8ce6a0; }
+.opts button.opt.off { background: #3a2a35; border-color: #9a6a80; color: #d0b0c0; }
