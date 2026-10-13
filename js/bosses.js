@@ -134,6 +134,9 @@ function startBossPhase(g, m, phase, now) {
     if (!zz) g.addTimer(SHOCKWAVE_ZIGZAG_GAP_MS, push);
     g.shake(SCREEN_SHAKE_BOSS_DASH, SCREEN_SHAKE_DURATION_MS * 3);
     g.popup(m.x, m.y - m.radius - 34, phase === 3 ? "3페이즈 - 분노!" : "2페이즈!", [255, 120, 60]);
+    g.addHitstop(6, true);
+    Sound.play("phase", { vol: 0.6 }); Sound.play("alert", { vol: 0.45 });
+    g.addFx({ kind: "kp", img: "circle_03", x: m.x, y: m.y, size: m.radius * 3, grow: 2.5, color: phase === 3 ? [255, 80, 40] : [255, 200, 120], dur: 500 });
     if (phase === 3) {
         m.enraged = true; m.color = BOSS_ENRAGE_COLOR;
         m.rageBaseSpeed *= BOSS_PHASE3_SPEED_MULT; m.rageBaseDashSpeed *= BOSS_PHASE3_SPEED_MULT;
@@ -175,6 +178,7 @@ function* dashAlong(g, m, dir, len, telegraph, speedMult) {
         yield telegraph;
     }
     m.dashState = "dashing";
+    Sound.play("dash", { vol: 0.5, gap: 120 });
     let moved = 0;
     while (moved < len) {
         const s = Math.min(m.dashSpeed * (speedMult || 1), len - moved);
@@ -200,6 +204,8 @@ function* zigzagRings(g, m) {
         w.seg = seg;
         g.shockwaves.push(w);
         g.shake(SCREEN_SHAKE_BOSS_DASH * 0.6);
+        Sound.play("boom", { vol: 0.4, gap: 100, rate: 0.85 });
+        spawnSmokePuff(g.particles, cx, cy, [110, 100, 95], g.now, 3, 40);
         yield gap;
     }
 }
@@ -265,7 +271,7 @@ const BOSS_PATTERNS = {
             const [x, y] = i === 0 ? predictPlayerPoint(g.aimFor(m), 20, 0.8, 30) : nearPlayerPoint(g, m, 240);
             circleTg(g, m, x, y, 52, tgMs(m, 950), 1.3, {
                 color: [200, 150, 90],
-                onFire: (gg, tg, hit) => { if (!hit) gg.addTempRock(tg.x, tg.y, 24, 7000); },
+                onFire: (gg, tg, hit) => { gg.addFx({ kind: "anim", sheet: "rock", x: tg.x, y: tg.y - 6, scale: 2.6, dur: 520 }); if (!hit) gg.addTempRock(tg.x, tg.y, 24, 7000); },
             });
             yield 140;
         }

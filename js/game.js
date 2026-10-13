@@ -27,7 +27,8 @@ class Game {
         this.telegraphs = []; this.shockwaves = []; this.mines = [];
         this.fx = []; this.zones = []; this.pets = []; this.timers = [];
         this.decoy = null; this.recentDeaths = [];
-        this.shakeUntil = 0; this.shakeMagnitude = 0;
+        this.shakeUntil = 0; this.shakeMagnitude = 0; this.shakeDur = 1;
+        this.hitstop = 0; this._hsReadyAt = 0; this.hurtFlashUntil = 0; this.decals = [];
         this.comboCount = 0; this.comboLastKillTime = -COMBO_WINDOW_MS;
         this.score = 0; this.totalKills = 0;
         this.roomEnterTime = 0;
@@ -44,7 +45,31 @@ class Game {
     get obstacles() { return this.room.obstacles || []; }
 
     popup(x, y, text, color) { this.popups.push(new DamagePopup(x, y, text, color, this.now)); }
-    shake(mag, dur) { this.shakeMagnitude = mag; this.shakeUntil = this.now + (dur || SCREEN_SHAKE_DURATION_MS); }
+    // 화면 흔들림: 더 센 흔들림이 오면 덮어쓰고, 약한 건 남은 흔들림을 유지
+    shake(mag, dur) {
+        dur = dur || SCREEN_SHAKE_DURATION_MS;
+        const left = this.shakeUntil > this.now ? this.shakeMagnitude * (this.shakeUntil - this.now) / this.shakeDur : 0;
+        if (mag < left) return;
+        this.shakeMagnitude = mag; this.shakeDur = dur; this.shakeUntil = this.now + dur;
+    }
+    // 타격 멈춤(히트스톱): 아주 짧게 세상이 멈춰서 타격감을 준다 (프레임 수)
+    addHitstop(frames, force) {
+        if (!force && this.now < this._hsReadyAt) return;
+        this.hitstop = Math.max(this.hitstop, Math.min(12, frames));
+        this._hsReadyAt = this.now + 140;
+    }
+    addDecal(img, x, y, size, color, ms) {
+        if (!Opts.high) return;
+        this.decals.push({ img, x, y, size, color, alpha: 0.55, rot: uniform(0, 6.28), until: this.now + (ms || 7000) });
+        if (this.decals.length > 24) this.decals.shift();
+    }
+    explosionFx(x, y, r, color) {
+        this.addFx({ kind: "anim", sheet: "explosion", x, y, scale: r / 18, dur: 420 });
+        spawnSmokePuff(this.particles, x, y, [90, 80, 80], this.now, 5, r * 0.9);
+        spawnHitSparks(this.particles, x, y, color || [255, 170, 70], this.now, 6);
+        this.addDecal("scorch_02", x, y, r * 2.2, [20, 14, 12]);
+        Sound.play("explode", { vol: 0.55, gap: 60 });
+    }
 
     clampToPlay(o) {
         o.x = clamp(o.x, PLAY_LEFT + o.radius, PLAY_RIGHT - o.radius);
@@ -58,7 +83,8 @@ class Game {
         if (prev && prev.obstacles) prev.obstacles = prev.obstacles.filter(o => !o.expireAt);
         this.monsters = []; this.zaps = []; this.bullets = []; this.hazards = []; this.lasers = [];
         this.telegraphs = []; this.shockwaves = []; this.mines = []; this.zones = []; this.timers = [];
-        this.fx = []; this.decoy = null; this.recentDeaths = [];
+        this.fx = []; this.decoy = null; this.recentDeaths = []; this.decals = [];
+        if (this.now > 0) Sound.play("door", { vol: 0.35, gap: 200 });
         const room = this.rooms.get(ck(coord[0], coord[1]));
         room.visited = true;
         const now = this.now;
@@ -132,6 +158,7 @@ class Game {
         if (a <= 0 || p.hp >= p.maxHp) return;
         p.hp = Math.min(p.maxHp, p.hp + a);
         this.popup(p.x + 14, p.y - p.radius - 10, `+${fmtNum(a)}`, [120, 255, 140]);
+        if (a >= p.maxHp * 0.03) Sound.play("heal", { vol: 0.35, gap: 400 });
     }
     shieldPlayer(amount, ms) {
         const p = this.player, now = this.now;
@@ -161,8 +188,12 @@ class Game {
         if (d > 0) {
             p.hp -= d;
             this.popup(p.x, p.y - p.radius - 10, `-${fmtNum(d)}`, color || [255, 90, 90]);
-        }
-        this.shake(SCREEN_SHAKE_HIT);
+            this.hurtFlashUntil = now + 260;
+            this.addHitstop(3, true);
+            Sound.play("hurt", { vol: 0.6, gap: 80 });
+            spawnHitSparks(this.particles, p.x, p.y, [255, 90, 90], now, 5);
+        } else Sound.play("hit1", { vol: 0.35, rate: 1.4, gap: 80 });
+        this.shake(SCREEN_SHAKE_HIT + 2);
         if (source && source.hasAffix && source.hasAffix("vampire") && this.monsters.includes(source)) {
             const h = dmg * ELITE_VAMPIRE_HEAL_MULT;
             source.hp = Math.min(source.maxHp, source.hp + h);
@@ -204,7 +235,12 @@ class Game {
             this.clampToPlay(m);
         }
         const color = o.color || [255, 255, 255];
-        this.popup(m.x + (o.popupDx || 0), m.y - m.radius - (o.popupDy || 6), `-${fmtNum(dmg)}${out.crit ? "!" : ""}`, out.crit ? [255, 170, 60] : color);
+        // 숫자가 너무 많이 겹치지 않게: 짧은 시간의 작은 피해는 모아서 한 번에 보여준다
+        m._dmgAcc = (m._dmgAcc || 0) + dmg;
+        if (out.crit || now >= (m._popupNext || 0) || m.hp <= 0) {
+            this.popup(m.x + (o.popupDx || 0) + uniform(-6, 6), m.y - m.radius - (o.popupDy || 6), `-${fmtNum(m._dmgAcc)}${out.crit ? "!" : ""}`, out.crit ? [255, 170, 60] : color);
+            m._dmgAcc = 0; m._popupNext = now + 130;
+        }
         if (m.hp <= 0) { out.killed = true; if (!o.noKill) this.killMonster(m); }
         return out;
     }
@@ -311,14 +347,26 @@ class Game {
     killMonster(m, opts) {
         opts = opts || {};
         const now = this.now, p = this.player;
-        spawnDeathBurst(this.particles, m.x, m.y, m.color, now, DEATH_PARTICLE_COUNT * (m.isBoss ? 2 : 1));
+        spawnDeathBurst(this.particles, m.x, m.y, m.color, now, Math.ceil(DEATH_PARTICLE_COUNT * (m.isBoss ? 2 : 0.6)));
+        this.addFx({ kind: "anim", sheet: "smoke", x: m.x, y: m.y, scale: m.radius / 9, dur: 420 });
+        spawnHitSparks(this.particles, m.x, m.y, m.isElite ? affixColor(m.affixes[0] || "fire") : [255, 240, 220], now, m.isBoss ? 12 : 4);
+        if (m.isBoss) {
+            for (let k = 0; k < 5; k++) {
+                const ox = uniform(-1, 1) * m.radius, oy = uniform(-1, 1) * m.radius;
+                this.addTimer(k * 130, gg => gg.explosionFx(m.x + ox, m.y + oy, 40 + k * 6));
+            }
+            this.addHitstop(12, true); this.shake(SCREEN_SHAKE_BOSS_DASH + 4, 600);
+        } else if (m.isElite) { this.addHitstop(4, true); Sound.play("crit", { vol: 0.5 }); }
+        else if (!opts.selfDestruct) this.addHitstop(2);
+        if (!opts.selfDestruct && m.subtype !== "exploder") Sound.play("kill", { vol: 0.42, gap: 40, rate: m.isBoss ? 0.7 : 1 });
         const idx = this.monsters.indexOf(m);
         if (idx >= 0) this.monsters.splice(idx, 1);
         this.lasers = this.lasers.filter(L => L !== m.laser && L.owner !== m);
         if (m.isBoss) this.telegraphs = this.telegraphs.filter(t => t.owner !== m);
 
         if (opts.selfDestruct) {       // 자폭: 점수/처치 수 없음
-            spawnDeathBurst(this.particles, m.x, m.y, KAMIKAZE_COLOR, now, DEATH_PARTICLE_COUNT * 2);
+            spawnDeathBurst(this.particles, m.x, m.y, KAMIKAZE_COLOR, now, DEATH_PARTICLE_COUNT);
+            this.explosionFx(m.x, m.y, KAMIKAZE_BLAST_RADIUS * 0.8, KAMIKAZE_COLOR);
             this.shake(SCREEN_SHAKE_BOSS_DASH);
             return;
         }
@@ -332,7 +380,8 @@ class Game {
         if (m.marks.harvest && now <= m.marks.harvest) this.healPlayer(m.marks.harvestHeal || 0);
 
         if (m.subtype === "exploder") {
-            spawnDeathBurst(this.particles, m.x, m.y, EXPLODER_COLOR, now, DEATH_PARTICLE_COUNT * 2);
+            spawnDeathBurst(this.particles, m.x, m.y, EXPLODER_COLOR, now, DEATH_PARTICLE_COUNT);
+            this.explosionFx(m.x, m.y, EXPLODER_BLAST_RADIUS * 0.8, EXPLODER_COLOR);
             spawnHazard(this.hazards, m.x, m.y, EXPLODER_HAZARD_RADIUS, scaleDmg(HAZARD_DAMAGE, m.power), now, EXPLODER_COLOR);
             if (hypot(p.x - m.x, p.y - m.y) < EXPLODER_BLAST_RADIUS) {
                 if (this.hurtPlayer(scaleDmg(EXPLODER_BLAST_DMG, m.power), [255, 140, 40])) this.shake(SCREEN_SHAKE_BOSS_DASH);
@@ -367,6 +416,7 @@ class Game {
     step() {
         // 이미지를 크게 보는 동안은 시간이 멈춘다 (풀이 시간에도 안 들어감)
         if (this.paused || this.ended || ZoomView.isOpen) return;
+        if (this.hitstop > 0 && !this.quiz && !this.skillPick) { this.hitstop--; return; }
         this.now += FRAME_MS;
         const now = this.now;
         if (this.stageMessage && now >= this.stageMessageUntil) this.stageMessage = "";
@@ -422,6 +472,8 @@ class Game {
                 if (hypot(p.x - gx, p.y - gy) < GUN_PICKUP_RADIUS + p.radius) {
                     p.gun = gun;
                     room.gunChoices = [];
+                    Sound.play("pickup", { vol: 0.6 });
+                    spawnHitSparks(this.particles, gx, gy, gun.borderColor, now, 10, true);
                     this.popup(p.x, p.y - p.radius - 26, `${gun.name} 획득!`, gun.borderColor);
                     spawnDeathBurst(this.particles, gx, gy, gun.color, now, DEATH_PARTICLE_COUNT);
                     break;
@@ -430,6 +482,7 @@ class Game {
             const portal = room.portal;
             if (portal && hypot(p.x - portal[0], p.y - portal[1]) < PORTAL_RADIUS + p.radius * 0.5) {
                 this.stage += 1;
+                Sound.play("stage", { vol: 0.6 });
                 [this.rooms, this.currentCoord] = generateDungeon();
                 this.loadRoom(this.currentCoord);
                 room = this.room; obstacles = room.obstacles || [];
@@ -449,6 +502,9 @@ class Game {
                 const tdx = target.x - p.x, tdy = target.y - p.y, td = hypot(tdx, tdy);
                 if (td > 0) {
                     const shots = makePlayerBullets(p, tdx / td, tdy / td);
+                    Sound.play("shoot", { vol: 0.12, gap: 90, jitter: 0.12 });
+                    if (Opts.high) this.particles.push(new FxParticle({ img: "muzzle_02", x: p.x + tdx / td * 18, y: p.y + tdy / td * 18, color: p.gun ? ELEMENT_FX_COLOR[p.gun.element] : [255, 230, 150],
+                        size: 22, life: 90, t0: now, rot: Math.atan2(tdy, tdx) + Math.PI / 2 }));
                     if (p.empower) { shots[0].empower = p.empower; shots[0].radius += 2; p.empower = null; }
                     this.bullets.push(...shots);
                     if (now < p.volleyUntil) {
@@ -577,6 +633,7 @@ class Game {
             this.telegraphs = []; this.shockwaves = []; this.mines = []; this.zones = []; this.timers = [];
             this.decoy = null; p.trailUntil = 0;
             room.obstacles = room.obstacles.filter(o => !o.expireAt);
+            Sound.play(room.type === "boss" ? "stage" : "clear", { vol: 0.6 });
             if (room.type === "boss") {
                 this.stageMessage = `STAGE ${this.stage} CLEAR!`;
                 this.stageMessageUntil = now + 1600;
@@ -590,7 +647,9 @@ class Game {
             }
         }
 
-        if (p.hp <= 0 && !this.gameOver) { this.gameOver = true; Input.releaseJoystick(); }
+        if (p.hp <= 0 && !this.gameOver) { this.gameOver = true; Input.releaseJoystick(); Sound.playMusic(null); Sound.play("gameover", { vol: 0.7 }); }
+        // 바닥 자국 정리
+        if (this.decals.length && this.decals[0].until < now) this.decals = this.decals.filter(d => d.until > now);
     }
 
     updateBullets(now, obstacles) {
@@ -622,6 +681,11 @@ class Game {
                     const crit = Math.random() < CRIT_CHANCE;
                     if (crit) damage *= CRIT_MULTIPLIER;
                     const res = this.hitMonster(m, damage, { crit, knock: [b.dirX, b.dirY], noKill: true });
+                    if (res.dealt > 0) {
+                        spawnHitSparks(this.particles, b.x, b.y, gun ? ELEMENT_FX_COLOR[gun.element] : [255, 230, 150], now, crit ? 6 : 3, crit);
+                        Sound.play(crit ? "crit" : choice(["hit1", "hit2", "hit3"]), { vol: crit ? 0.45 : 0.28, gap: 35 });
+                        if (crit) { this.addHitstop(1); this.shake(2); }
+                    }
 
                     if (b.pierceLeft > 0) { b.pierceLeft -= 1; b.damage *= WIND_PIERCE_DAMAGE_MULT; b.hitSet.add(m); }
                     else this.removeBullet(b);
@@ -717,7 +781,15 @@ class Game {
                 hit = this.hurtPlayer(tg.damage, [255, 110, 90], tg.owner);
                 if (hit && tg.slowPct) this.slowPlayer(tg.slowPct, tg.slowMs);
             }
-            if (tg.damage > 0) this.addFx({ kind: "flash", tg, color: tg.color, dur: tg.kind === "field" ? 260 : 180 });
+            if (tg.damage > 0) {
+                this.addFx({ kind: "flash", tg, color: tg.color, dur: tg.kind === "field" ? 260 : 180 });
+                Sound.play("boom", { vol: tg.kind === "field" ? 0.6 : 0.3, gap: 90 });
+                if (tg.kind === "circle" && tg.r >= 45) {
+                    spawnSmokePuff(this.particles, tg.x, tg.y, [120, 105, 95], now, 4, tg.r * 0.6);
+                    spawnDebris(this.particles, tg.x, tg.y, [140, 110, 90], now, 5);
+                    this.addDecal("dirt_02", tg.x, tg.y, tg.r * 1.4, [30, 22, 18], 5000);
+                }
+            }
             if (tg.kind === "field" && tg.damage > 0) this.shake(SCREEN_SHAKE_BOSS_DASH);
             if (tg.onFire) tg.onFire(this, tg, hit);
         }
@@ -739,7 +811,7 @@ class Game {
                 mi.triggered = true;
                 this.addTelegraph(new Telegraph("circle", now, 450, {
                     x: mi.x, y: mi.y, r: TRAPPER_MINE_RADIUS, damage: mi.damage, color: TRAPPER_COLOR,
-                    onFire: (g) => { g.mines = g.mines.filter(o => o !== mi); spawnDeathBurst(g.particles, mi.x, mi.y, TRAPPER_COLOR, g.now, 12); },
+                    onFire: (g) => { g.mines = g.mines.filter(o => o !== mi); spawnDeathBurst(g.particles, mi.x, mi.y, TRAPPER_COLOR, g.now, 8); g.explosionFx(mi.x, mi.y, TRAPPER_MINE_RADIUS, TRAPPER_COLOR); },
                 }));
             }
         }
@@ -757,6 +829,7 @@ class Game {
             if (!t) continue;
             if (p.skillBoost && s.id !== "rewind") { this._castBoost = p.skillBoost; p.skillBoost = 0; }
             SKILL_CAST[s.id](this, s, t);
+            Sound.play("sk_" + def.el, { vol: 0.42, gap: 80 });
             this._castBoost = 0;
             s.readyAt = now + skillCooldownMs(def, s.level);
             s.castAt = now;
@@ -845,6 +918,7 @@ class Game {
         if (!q || q.phase !== "answering") return;
         q.selected = choice;
         this.flashPressed(choice);
+        Sound.play("select", { vol: 0.4, gap: 30 });
     }
 
     quizSubmit() {
@@ -854,6 +928,7 @@ class Game {
         const prob = q.questions[q.index];
         const isCorrect = q.selected === prob.correct;
         if (isCorrect) q.correct += 1; else saveWrongAnswer(prob);
+        Sound.play(isCorrect ? "correct" : "wrong", { vol: 0.55, gap: 0, jitter: 0 });
         const elapsedSec = Math.max(0, (now - q.questionStart) / 1000);
         const [quality, tier] = computeSm2Quality(isCorrect, elapsedSec);
         const counts = q.index < q.flags.length ? q.flags[q.index] : true;
@@ -928,13 +1003,14 @@ class Game {
         const options = rollSkillOffers(this.player);
         if (!options.length) return;
         this.skillPick = { phase: "choose", options, sel: null, pending: null, openedAt: this.now };
+        Sound.play("powerup", { vol: 0.55 });
         Input.releaseJoystick();
     }
     skillPickSelect(i) {
         const sp = this.skillPick;
         if (!sp) return;
         const n = sp.phase === "choose" ? sp.options.length : this.player.skills.length + 1;
-        if (i >= 0 && i < n) sp.sel = i;
+        if (i >= 0 && i < n) { sp.sel = i; Sound.play("select", { vol: 0.4, gap: 30 }); }
     }
     skillPickConfirm() {
         const sp = this.skillPick, p = this.player;
@@ -961,6 +1037,8 @@ class Game {
         }
         this.skillPick = null;
         Input.releaseJoystick();
+        Sound.play("pickup", { vol: 0.55 });
+        spawnHitSparks(this.particles, p.x, p.y, [255, 230, 140], this.now, 10, true);
     }
 
     // 문제/해설 이미지 크게 보기
@@ -1040,8 +1118,10 @@ class Game {
     draw(ctx) {
         const now = this.now;
         ctx.save();
-        if (now < this.shakeUntil && !this.paused) {
-            ctx.translate(randInt(-this.shakeMagnitude, this.shakeMagnitude), randInt(-this.shakeMagnitude, this.shakeMagnitude));
+        if (now < this.shakeUntil && !this.paused && Opts.data.shake) {
+            // 점점 약해지는 부드러운 흔들림
+            const k = (this.shakeUntil - now) / this.shakeDur, m = this.shakeMagnitude * k * k;
+            ctx.translate(Math.sin(now * 0.09) * m + Math.sin(now * 0.23) * m * 0.5, Math.cos(now * 0.11) * m + Math.sin(now * 0.31) * m * 0.5);
         }
         if (this.quiz) {
             drawQuizScreen(ctx, this.quiz, now, Input.lastType === "touch");
@@ -1057,6 +1137,7 @@ class Game {
                 gameOver: this.gameOver, stageMessage: this.stageMessage,
                 telegraphs: this.telegraphs, shockwaves: this.shockwaves, mines: this.mines,
                 fx: this.fx, zones: this.zones, pets: this.pets, decoy: this.decoy,
+                decals: this.decals, hurtFlashUntil: this.hurtFlashUntil,
             }, now);
         }
         ctx.restore();

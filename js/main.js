@@ -195,10 +195,49 @@ function renderSettings(values) {
     msg.className = "status" + (GunSource.from === "github" ? " ok" : " warn");
 }
 
+// ---------------- 화면·소리 설정 ----------------
+const OPT_LABEL = {
+    quality: v => v === "high" ? "효과: 높음" : "효과: 낮음",
+    sfx: v => v ? "효과음: 켜짐" : "효과음: 꺼짐",
+    music: v => v ? "배경음악: 켜짐" : "배경음악: 꺼짐",
+    shake: v => v ? "화면 흔들림: 켜짐" : "화면 흔들림: 꺼짐",
+};
+function renderOpts() {
+    document.querySelectorAll("button.opt").forEach(b => {
+        const k = b.dataset.opt, v = Opts.data[k];
+        b.textContent = OPT_LABEL[k](v);
+        const on = k === "quality" ? v === "high" : !!v;
+        b.classList.toggle("on", on); b.classList.toggle("off", !on);
+    });
+}
+document.querySelectorAll("button.opt").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.opt;
+    if (k === "quality") Opts.data.quality = Opts.data.quality === "high" ? "low" : "high";
+    else Opts.data[k] = !Opts.data[k];
+    Opts.save(); renderOpts();
+    Sound.applyVolume();
+    if (k === "music") Sound.musicToggled();
+    if (k === "sfx") Sound.play("select", { vol: 0.5 });
+}));
+// 지금 상황에 맞는 배경음악
+function updateMusic() {
+    let want = "menu";
+    if (game) {
+        if (game.gameOver) want = null;
+        else want = (game.room.type === "boss" && !game.room.cleared) ? "boss" : "battle";
+    }
+    if (want !== Sound.wantMusic) Sound.playMusic(want);
+    Sound.setDuck(game && (game.quiz || game.skillPick || game.paused) ? 0.4 : 1);
+}
+setInterval(updateMusic, 250);
+
 // ---------------- 시작 ----------------
 try { loadGunSettings(); } catch (e) { /* 저장된 설정이 망가졌으면 기본값 사용 */ }
+Opts.load(); renderOpts();
+Sound.init();
 Input.init(canvas);
 loadSprites();
+loadGfx();
 show("menu");
 startSync();
 requestAnimationFrame(frame);

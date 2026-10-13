@@ -188,7 +188,7 @@ function updateLeaper(g, m, aim, now, canAttack) {
         m.jumpFrom = [m.x, m.y]; m.jumpTo = [clamp(tx, PLAY_LEFT + 20, PLAY_RIGHT - 20), clamp(ty, PLAY_TOP + 20, PLAY_BOTTOM - 20)];
         g.addTelegraph(new Telegraph("circle", now, LEAPER_AIR_MS, {
             x: m.jumpTo[0], y: m.jumpTo[1], r: LEAPER_SLAM_RADIUS, damage: m.bulletDamage, owner: m, cancelWithOwner: true,
-            onFire: (gg) => { gg.shake(SCREEN_SHAKE_HIT); gg.addFx({ kind: "ring", x: m.jumpTo[0], y: m.jumpTo[1], r: LEAPER_SLAM_RADIUS, color: LEAPER_COLOR, dur: 250 }); },
+            onFire: (gg) => { gg.shake(SCREEN_SHAKE_HIT); gg.addFx({ kind: "ring", x: m.jumpTo[0], y: m.jumpTo[1], r: LEAPER_SLAM_RADIUS, color: LEAPER_COLOR, dur: 250 }); Sound.play("land", { vol: 0.4, gap: 60 }); },
         }));
     }
 }
@@ -379,6 +379,10 @@ function eliteDeathEffects(g, m, now) {
             x: m.x, y: m.y, r: frost ? ELITE_FROST_RADIUS : ELITE_EXPLODE_RADIUS,
             damage: scaleDmg(frost ? ELITE_FROST_DMG : ELITE_EXPLODE_DMG, m.power),
             color: affixColor(frost ? "frost" : "explosive"), slowPct: frost ? 0.4 : 0, slowMs: frost ? 2000 : 0,
+            onFire: (gg, tg) => {
+                if (frost) { gg.addFx({ kind: "anim", sheet: "ice", x: tg.x, y: tg.y, scale: tg.r / 14, dur: 450 }); Sound.play("sk_ice", { vol: 0.5 }); }
+                else gg.explosionFx(tg.x, tg.y, tg.r * 0.9, affixColor("explosive"));
+            },
         }));
     }
     if (m.hasAffix("splitting") && g.monsters.length < MAX_MONSTERS_PER_ROOM + 4) {
