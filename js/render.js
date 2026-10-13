@@ -791,10 +791,24 @@ function drawTelegraph(ctx, tg, now, obstacles) {
 function drawShockwave(ctx, w) {
     const steps = 90;
     ctx.save();
+    ctx.beginPath(); ctx.rect(PLAY_LEFT, PLAY_TOP, PLAY_RIGHT - PLAY_LEFT, PLAY_BOTTOM - PLAY_TOP); ctx.clip();   // 방 밖으로 안 그림
     ctx.lineWidth = SHOCKWAVE_THICKNESS; ctx.lineCap = "butt";
     ctx.strokeStyle = rgb(w.color, 0.75);
     let drawing = false;
     ctx.beginPath();
+    if (w.seg) {
+        // 지그재그 고리: 벽 조각만 호로 그린다
+        const sw = w.seg.width, n = Math.round(Math.PI / sw);
+        for (let k = 0; k < n; k++) {
+            const a0 = w.seg.phase + k * 2 * sw;
+            ctx.moveTo(w.x + Math.cos(a0) * w.r, w.y + Math.sin(a0) * w.r);
+            ctx.arc(w.x, w.y, w.r, a0, a0 + sw);
+        }
+        ctx.stroke();
+        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.stroke();
+        ctx.restore();
+        return;
+    }
     for (let i = 0; i <= steps; i++) {
         const a = i / steps * Math.PI * 2, gap = w.inGap(a);
         const x = w.x + Math.cos(a) * w.r, y = w.y + Math.sin(a) * w.r;

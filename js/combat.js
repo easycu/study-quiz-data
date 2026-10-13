@@ -79,6 +79,14 @@ class Shockwave {
         this.hit = false; this.owner = owner || null;
     }
     inGap(angle) {
+        if (this.seg) {
+            // 지그재그 고리: [벽 w][빈칸 w][벽 w][빈칸 w]... 가 원을 따라 반복된다
+            const w = this.seg.width, P = w * 2;
+            let t = (angle - this.seg.phase) % P;
+            if (t < 0) t += P;
+            const pad = w * SHOCKWAVE_ZIGZAG_GAP_PAD;
+            return t >= w + pad && t <= P - pad;
+        }
         for (const [c, h] of this.gaps) {
             let d = angle - c;
             while (d > Math.PI) d -= Math.PI * 2;
@@ -110,8 +118,22 @@ function ringGaps(g, m, n, halfWidth, same, speed, shift) {
     return out;
 }
 // 이 보스가 쏜, 아직 퍼지고 있는 충격파의 빈틈 (없으면 null)
+// 이 보스가 쏜, 아직 퍼지고 있는 지그재그 고리 (마지막 것)
+function activeZigzag(g, m) {
+    const ws = g.shockwaves.filter(s => s.owner === m && s.seg && s.r < s.maxR);
+    return ws.length ? ws[ws.length - 1] : null;
+}
+// 지그재그 고리 하나: 플레이어 자리에서 벽/빈칸 폭이 플레이어 몸의 1.5배쯤 되게 나눈다
+function zigzagSeg(g, m, prev) {
+    if (prev) return { phase: prev.phase + prev.width, width: prev.width };     // 앞 고리와 엇갈리게
+    const T = g.aimFor(m);
+    const d = clamp(hypot(T.x - m.x, T.y - m.y), SHOCKWAVE_ZIGZAG_MIN_DIST, SHOCKWAVE_ZIGZAG_MAX_DIST);
+    const want = g.player.radius * 2 * SHOCKWAVE_ZIGZAG_WIDTH_MULT / d;   // 라디안
+    const n = Math.max(3, Math.round(Math.PI / want));                   // 벽 n개 + 빈칸 n개
+    return { phase: uniform(0, Math.PI * 2), width: Math.PI / n };
+}
 function activeRingGaps(g, m) {
-    const w = g.shockwaves.find(s => s.owner === m && s.r < s.maxR);
+    const w = g.shockwaves.find(s => s.owner === m && !s.seg && s.r < s.maxR);
     return w ? w.gaps : null;
 }
 function randomGaps(n, halfWidth) {

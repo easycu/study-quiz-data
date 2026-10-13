@@ -160,6 +160,12 @@ const SHOCKWAVE_THICKNESS = 16;
 //   -> 가만히 있으면 맞고, 바로 움직이면 피할 수 있다
 const SHOCKWAVE_GAP_COUNT = 3, SHOCKWAVE_GAP_HALF = 0.22;
 const SHOCKWAVE_GAP_REACH_MIN = 0.55, SHOCKWAVE_GAP_REACH_MAX = 0.85, SHOCKWAVE_GAP_REACH_SAFETY = 0.6;
+// 지그재그 충격파: 고리 3~6개를 차례로 쏘고, 고리마다 벽과 빈칸이 서로 엇갈린다
+//   벽/빈칸 폭 = 플레이어 몸 너비 x 1.5 (플레이어가 서 있던 거리 기준)
+const SHOCKWAVE_ZIGZAG_COUNT = [3, 6], SHOCKWAVE_ZIGZAG_WIDTH_MULT = 1.5;
+const SHOCKWAVE_ZIGZAG_GAP_MS = 600, SHOCKWAVE_ZIGZAG_SPEED = 3.4, SHOCKWAVE_ZIGZAG_DMG_MULT = 0.7;
+const SHOCKWAVE_ZIGZAG_MIN_DIST = 130, SHOCKWAVE_ZIGZAG_MAX_DIST = 380;
+const SHOCKWAVE_ZIGZAG_GAP_PAD = 0.08;      // 빈칸 양쪽 끝을 이만큼(빈칸 폭 대비) 벽으로 친다
 const SHOCKWAVE_DOUBLE_SHIFT = 0.38;        // 연달아 퍼지는 두 번째 고리는 빈틈이 이만큼(라디안) 옆으로 옮겨진다
 // 연달아 쓰지 않는 원형 패턴 (한 번 쓰면 다음 패턴은 원형이 아닌 것)
 const BOSS_RING_PATTERNS = ["slamRing", "stompRing", "quake", "ringShot"];
