@@ -83,3 +83,18 @@ input.bad { border-color: #ff6060; background: #4a2030; }
 .opts button.opt { min-width: 150px; font-size: 15px; padding: 8px 12px; }
 .opts button.opt.on { background: #2f5f4a; border-color: #8ce6a0; }
 .opts button.opt.off { background: #3a2a35; border-color: #9a6a80; color: #d0b0c0; }
+
+/* ---- 서바이벌 모드 ---- */
+a.btnlink { display: block; text-align: center; padding: 10px 16px; margin: 6px 0; border-radius: 10px; border: 2px solid #6a6a90;
+  background: #3a3a55; color: #fff; text-decoration: none; font-size: 16px; }
+a.btnlink.sv { background: #7a3a20; border-color: #ffb070; font-weight: bold; font-size: 18px; }
+.row.wpns button { flex: 1 1 180px; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.row.wpns small { font-size: 12px; font-weight: normal; opacity: 0.85; }
+.svstats { text-align: center; line-height: 1.9; }
+.svstats .big { font-size: 30px; font-weight: bold; color: #ffe08a; }
+.svstats .new { font-size: 14px; color: #8ce6a0; margin-left: 6px; }
+.dmgrow { display: grid; grid-template-columns: 110px 1fr 70px; gap: 8px; align-items: center; margin: 4px 0; font-size: 14px; }
+.dmgrow i { display: block; height: 12px; border-radius: 6px; }
+.dmgrow b { text-align: right; }
+#svResDmg { width: min(520px, 100%); margin: 0 auto 10px; }
+.svstats { width: 100%; }
