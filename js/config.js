@@ -155,6 +155,12 @@ const BOSS_GOLEM_UNLOCK_STAGE = 2, BOSS_MAGE_UNLOCK_STAGE = 4, BOSS_BLADE_UNLOCK
 const BOSS_QUEEN_UNLOCK_STAGE = 6, BOSS_JUDGE_UNLOCK_STAGE = 8, BOSS_HYBRID_UNLOCK_STAGE = 10, BOSS_HYBRID_CHANCE = 0.4;
 const EGG_BASE_HP = 16, EGG_HATCH_MS = 4200, EGG_COLOR = [235, 225, 180];
 const SHOCKWAVE_THICKNESS = 16;
+// 탄막 마법사 광선 쓸기: 쓸고 지나가는 부채꼴 각도 / 광선 길이 / 예고 / 쓰는 시간
+//   플레이어는 부채꼴의 시작 쪽 35% 지점에 놓인다 -> 예고 동안 시작 쪽 바깥으로 빠지거나,
+//   광선보다 빨리 끝 쪽으로 달리거나, 광선 길이 밖으로 멀어지면 피할 수 있다
+// 탄막 마법사 광선 쓸기: 광선은 플레이어 바로 옆(부채꼴의 18% 지점)에서 시작한다
+//   -> 예고(빨간 시작선)가 보이면 그 시작선 너머로 한 걸음 넘어가면 피할 수 있다 (또는 광선 길이 밖으로)
+const BOSS_SWEEP_SPAN_DEG = 120, BOSS_SWEEP_LEN = 360, BOSS_SWEEP_WARN_MS = 950, BOSS_SWEEP_ACTIVE_MS = 2400, BOSS_SWEEP_PLAYER_AT = 0.18;
 // 충격파 고리 빈틈: 개수 / 빈틈 절반 너비(라디안, 0.22 = 약 25도 너비)
 //   가장 가까운 빈틈은 플레이어 자리에서 "고리가 닿기 전에 걸어서 갈 수 있는 거리"의 55~85% 만큼 떨어진 곳에 생긴다
 //   -> 가만히 있으면 맞고, 바로 움직이면 피할 수 있다

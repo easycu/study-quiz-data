@@ -908,6 +908,25 @@ function drawFx(ctx, f, now, p) {
     if (f.follow === "player") { x = p.x; y = p.y; }
     if (f.followM && f.followM.hp > 0) { x = f.followM.x; y = f.followM.y; }
     switch (f.kind) {
+        case "sweep": {      // 광선이 쓸고 지나갈 부채꼴 + 방향 화살표
+            const warnK = clamp((now - f.t0) / f.warn, 0, 1), inWarn = now - f.t0 < f.warn;
+            const a0 = f.start, a1 = f.start + f.span, lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+            ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.arc(f.x, f.y, f.len, lo, hi); ctx.closePath();
+            ctx.fillStyle = rgb([255, 60, 60], inWarn ? 0.08 + 0.10 * warnK : 0.06); ctx.fill();
+            ctx.strokeStyle = rgb([255, 90, 80], inWarn ? 0.7 : 0.35); ctx.lineWidth = 2; ctx.stroke();
+            // 시작 쪽 모서리는 굵게
+            R.line(ctx, f.x, f.y, f.x + Math.cos(a0) * f.len, f.y + Math.sin(a0) * f.len, rgb([255, 220, 120], inWarn ? 0.9 : 0.3), 3);
+            if (inWarn) {
+                const rr = f.len * 0.82, sgn = Math.sign(f.span);
+                ctx.beginPath(); ctx.arc(f.x, f.y, rr, lo + 0.08, hi - 0.08);
+                ctx.strokeStyle = rgb([255, 220, 120], 0.8); ctx.lineWidth = 3; ctx.stroke();
+                const ae = a1 - sgn * 0.08, hx = f.x + Math.cos(ae) * rr, hy = f.y + Math.sin(ae) * rr;
+                const tx = -Math.sin(ae) * sgn, ty = Math.cos(ae) * sgn;      // 도는 방향
+                const nx = Math.cos(ae), ny = Math.sin(ae);
+                R.poly(ctx, [[hx + tx * 14, hy + ty * 14], [hx - tx * 4 + nx * 9, hy - ty * 4 + ny * 9], [hx - tx * 4 - nx * 9, hy - ty * 4 - ny * 9]], [255, 220, 120]);
+            }
+            break;
+        }
         case "anim": drawSheet(ctx, f.sheet, t, x, y, f.scale || 2, f.rot || 0, f.alpha === undefined ? 1 : f.alpha, f.tint); break;
         case "kp": drawKp(ctx, f.img, x, y, f.size * (1 + (f.grow || 0) * t), f.color, (f.alpha || 1) * a, f.rot || 0, f.add !== false); break;
         case "circle": {

@@ -297,6 +297,7 @@ class RotatingLaser {
         this.state = "warning"; this.stateUntil = now + this.warnMs;
         this.nextTickTime = 0;
         this.owner = null;
+        this.stillWarn = !!opts.stillWarn;      // 예고 중에는 돌지 않고 시작 자리에서 기다림
     }
     beamAngles() {
         const out = [];
@@ -304,7 +305,7 @@ class RotatingLaser {
         return out;
     }
     update(now) {
-        if (this.state !== "rest") this.angle += this.angularSpeed;
+        if (this.state === "active" || (this.state === "warning" && !this.stillWarn)) this.angle += this.angularSpeed;
         if (now >= this.stateUntil) {
             if (this.state === "warning") { this.state = "active"; this.stateUntil = now + this.activeMs; }
             else if (this.state === "active") { this.state = "rest"; this.stateUntil = now + this.restMs; }

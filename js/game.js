@@ -230,7 +230,7 @@ class Game {
         out.dealt = d;
         m.hitFlashUntil = now + HIT_FLASH_MS;
         resetMonsterRage(m, now);
-        if (o.knock && !m.immovable && !m.airborne) {
+        if (o.knock && !m.immovable && !m.airborne && !m.isBoss) {      // 보스는 총알에 밀리지 않음
             m.x += o.knock[0] * KNOCKBACK_MONSTER_DIST; m.y += o.knock[1] * KNOCKBACK_MONSTER_DIST;
             this.clampToPlay(m);
         }
@@ -305,7 +305,7 @@ class Game {
     }
     // 밀쳐내기. 벽(장애물/방 끝)에 부딪히면 true
     knockMonster(m, fx, fy, dist) {
-        if (m.immovable || m.airborne) return false;
+        if (m.immovable || m.airborne || (m.isBoss && m.bstate === "cast")) return false;   // 패턴 중인 보스는 안 밀림 (예고와 어긋나지 않게)
         let [ux, uy] = unitTo(fx, fy, m.x, m.y);
         const step = 6;
         for (let t = 0; t < dist; t += step) {

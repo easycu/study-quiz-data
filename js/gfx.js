@@ -76,7 +76,7 @@ async function loadGfx() {
         add(`assets/kp/${k}.png`, img => { GFX.kp[k] = img; });
     }
     for (const k of ["floor_battle", "floor_start", "floor_boss", "crate", "brick", "pillar", "rock", "skull", "bone",
-                     "pebbles", "grass1", "grass2", "grass3", "crack"]) {
+                     "pebbles", "grass1", "grass2", "grass3", "crack", "field"]) {
         add(`assets/tiles/${k}.png`, img => { GFX.tiles[k] = img; });
     }
     await Promise.all(jobs);

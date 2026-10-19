@@ -244,9 +244,9 @@ const BOSS_PATTERNS = {
         for (let i = 0; i < 3; i++) {
             const T = g.aimFor(m);
             const [tx, ty] = predictPlayerPoint(T, 25, 0.8, 30);
-            const ms = tgMs(m, i === 0 ? 850 : 720);
+            const ms = tgMs(m, i === 0 ? 900 : 800);
             const to = [clamp(tx, PLAY_LEFT + m.radius, PLAY_RIGHT - m.radius), clamp(ty, PLAY_TOP + m.radius, PLAY_BOTTOM - m.radius)];
-            circleTg(g, m, to[0], to[1], 92, ms, 1.4, { cancelWithOwner: true });
+            circleTg(g, m, to[0], to[1], 80, ms, 1.4, { cancelWithOwner: true });
             const from = [m.x, m.y], start = g.now;
             m.airborne = true;
             while (g.now - start < ms) {
@@ -278,8 +278,9 @@ const BOSS_PATTERNS = {
         yield 700;
     },
     *quake(g, m) {
-        yield* BOSS_PATTERNS.stompRing(g, m);
+        // 바위가 다 떨어진 뒤에 충격파 (둘이 겹치면 피할 길이 없어서 순서를 나눔)
         yield* BOSS_PATTERNS.rockfall(g, m);
+        yield* BOSS_PATTERNS.stompRing(g, m);
     },
     // ---- 무리 ----
     *summon(g, m) {
@@ -336,11 +337,19 @@ const BOSS_PATTERNS = {
         yield* BOSS_PATTERNS.spiral(g, m);
     },
     *beamSweep(g, m) {
-        const L = new RotatingLaser(m.x, m.y, scaleDmg(LASER_DAMAGE, m.power), g.now, 1, { length: 430, width: 16, warnMs: 900, activeMs: 2300, restMs: 99999, angularSpeed: 0.022 });
-        L.owner = m; L.angle = Math.atan2(g.aimFor(m).y - m.y, g.aimFor(m).x - m.x) + Math.PI * 0.6;
+        const T = g.aimFor(m), pa = Math.atan2(T.y - m.y, T.x - m.x);
+        const span = radians(BOSS_SWEEP_SPAN_DEG), dir = Math.random() < 0.5 ? -1 : 1;
+        const start = pa - dir * span * BOSS_SWEEP_PLAYER_AT;
+        const warn = tgMs(m, BOSS_SWEEP_WARN_MS), active = BOSS_SWEEP_ACTIVE_MS;
+        const L = new RotatingLaser(m.x, m.y, scaleDmg(LASER_DAMAGE, m.power), g.now, 1,
+            { length: BOSS_SWEEP_LEN, width: 16, warnMs: warn, activeMs: active, restMs: 99999, angularSpeed: span / (active / FRAME_MS), stillWarn: true });
+        L.owner = m; L.angle = start; L.angularSpeed = dir * Math.abs(L.angularSpeed);
         g.lasers.push(L);
-        const end = g.now + 3200;
-        while (g.now < end) { L.cx = m.x; L.cy = m.y; yield 0; }
+        // 쓸고 지나갈 부채꼴과 도는 방향을 미리 보여준다
+        g.addFx({ kind: "sweep", x: m.x, y: m.y, start, span: dir * span, len: BOSS_SWEEP_LEN, warn, dur: warn + active });
+        // 광선 중심은 예고한 자리에 고정 (보스가 밀려나도 예고와 실제 광선이 어긋나지 않게)
+        const cx = m.x, cy = m.y, end = g.now + warn + active;
+        while (g.now < end) { L.cx = cx; L.cy = cy; yield 0; }
         const i = g.lasers.indexOf(L); if (i >= 0) g.lasers.splice(i, 1);
     },
     *storm(g, m) {
@@ -414,18 +423,9 @@ const BOSS_PATTERNS = {
     *safeZone(g, m) { yield* bossSafeZone(g, m, m.phase >= 3 ? 1 : 2); },
     *crossLines(g, m) { yield* bossCrossLines(g, m); },
     *hideBehind(g, m) {
-        // 벽(장애물)이 적으면 잠깐 기둥을 세워준다
-        if (g.obstacles.length < 2) {
-            for (let i = 0; i < 3; i++) {
-                for (let t = 0; t < 20; t++) {
-                    const x = uniform(PLAY_LEFT + 80, PLAY_RIGHT - 80), y = uniform(PLAY_TOP + 70, PLAY_BOTTOM - 70);
-                    if (hypot(x - g.player.x, y - g.player.y) < 110 || hypot(x - m.x, y - m.y) < 130) continue;
-                    g.addTempRock(x, y, 30, 9000, "pillar"); break;
-                }
-            }
-            yield 500;
-        }
         const ms = tgMs(m, 2100);
+        // 제때 숨을 수 있는 벽이 없으면 플레이어 가까이에 기둥을 세워준다 (반드시 피할 길이 있게)
+        if (ensureCover(g, m, ms)) yield 500;
         g.addTelegraph(new Telegraph("field", g.now, ms, { x: m.x, y: m.y, losBlock: true, damage: Math.max(1, pyRound(m.bulletDamage * 2.2)), owner: m, color: [255, 200, 90] }));
         g.popup(m.x, m.y - m.radius - 30, "벽 뒤로 숨어라!", [255, 220, 120]);
         yield ms + 250;
@@ -559,6 +559,34 @@ function* bossCrossLines(g, m) {
         g.addTelegraph(new Telegraph("line", g.now, ms, Object.assign(o, { width: w, damage: Math.max(1, pyRound(m.bulletDamage * 1.6)), owner: m, color: [255, 200, 90] })));
     }
     yield ms + 200;
+}
+// (보스 -> 그 지점) 사이를 장애물이 가리는 곳 = 숨을 곳. 반응 시간을 빼고 걸어서 닿는 곳에 있는지 확인
+function coverReachable(g, m, reach) {
+    const p = g.player;
+    for (let i = 0; i < 90; i++) {
+        const a = (i / 90) * Math.PI * 2 * 7, d = reach * Math.sqrt((i + 1) / 90);
+        const x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
+        if (x < PLAY_LEFT + 20 || x > PLAY_RIGHT - 20 || y < PLAY_TOP + 20 || y > PLAY_BOTTOM - 20) continue;
+        if (g.obstacles.some(o => o.overlapsCircle(x, y, p.radius))) continue;
+        if (lineBlocked(m.x, m.y, x, y, g.obstacles)) return true;
+    }
+    return false;
+}
+function ensureCover(g, m, ms) {
+    const p = g.player, reach = p.speed * (ms - 450) / FRAME_MS * 0.7;
+    if (coverReachable(g, m, reach)) return false;
+    let made = 0;
+    for (let k = 0; k < 80 && made < 2; k++) {
+        // 숨을 자리(H)를 먼저 고르고, 보스 쪽으로 60px 앞에 기둥을 세운다
+        const a = uniform(0, Math.PI * 2), d = uniform(60, reach * 0.8);
+        const hx = p.x + Math.cos(a) * d, hy = p.y + Math.sin(a) * d;
+        if (hx < PLAY_LEFT + 25 || hx > PLAY_RIGHT - 25 || hy < PLAY_TOP + 25 || hy > PLAY_BOTTOM - 25) continue;
+        const [ux, uy] = unitTo(m.x, m.y, hx, hy), x = hx - ux * 58, y = hy - uy * 58;
+        if (hypot(x - m.x, y - m.y) < 100 || hypot(x - p.x, y - p.y) < p.radius + 44) continue;
+        if (made && g.obstacles.some(o => o.expireAt && hypot(o.x - x, o.y - y) < 150)) continue;
+        if (g.addTempRock(x, y, 30, 9000, "pillar")) made++;
+    }
+    return made > 0;
 }
 function bossMakeClones(g, m, n) {
     for (let i = 0; i < n; i++) {
