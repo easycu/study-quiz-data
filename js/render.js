@@ -390,15 +390,15 @@ function drawGunPickup(ctx, gun, x, y, now, near) {
         R.text(ctx, desc, bx + 8, y + 38, 14, [235, 235, 240]);
     }
 }
-function drawPortal(ctx, x, y, now, active) {
+function drawPortal(ctx, x, y, now, active, ending) {
     for (let k = 0; k < 4; k++) {
         const rr = PORTAL_RADIUS - k * 7;
         const a = now / (220 - k * 30) * (k % 2 === 0 ? 1 : -1);
-        const col = active ? [120 + k * 30, 80 + k * 20, 255] : [90, 90, 110];
+        const col = !active ? [90, 90, 110] : ending ? [255, 200 + k * 12, 120 + k * 30] : [120 + k * 30, 80 + k * 20, 255];
         ctx.beginPath(); ctx.ellipse(x, y, rr, rr * 0.6, 0, -a - 4.2, -a);
         ctx.strokeStyle = rgb(col); ctx.lineWidth = 3; ctx.stroke();
     }
-    R.text(ctx, "다음 스테이지 ▶", x, y + PORTAL_RADIUS * 0.6 + 4, 14, [200, 190, 255], { align: "center" });
+    R.text(ctx, ending ? "꿈에서 깨어나기 ▶" : "다음 스테이지 ▶", x, y + PORTAL_RADIUS * 0.6 + 4, 14, ending ? [255, 225, 150] : [200, 190, 255], { align: "center" });
 }
 function drawMonsterStatus(ctx, m, now) {
     const cx = m.x, cy = m.y, r = m.radius;
@@ -488,7 +488,9 @@ function drawGame(ctx, g, now) {
         }
         if (room.portal) L.push([room.portal[0], room.portal[1], 130, 0.9]);
         for (const [, gx, gy] of (room.gunChoices || [])) L.push([gx, gy, 80, 0.8]);
-        drawDarkness(ctx, room.type, L);
+        if (isSpecialRoom(room)) L.push([SPECIAL_X, SPECIAL_Y, 190, 1]);
+        for (const d of (g.drops || [])) L.push([d.x, d.y, 26, 0.5]);
+        drawDarkness(ctx, room.type, L, stageTheme(g.stage));
     }
 
     // ---- 바닥 위 위험 / 장판 (어둠 위에 그려서 잘 보이게) ----
@@ -498,7 +500,8 @@ function drawGame(ctx, g, now) {
     for (const tg of (g.telegraphs || [])) drawTelegraph(ctx, tg, now, g.obstacles);
     if (g.decoy) drawDecoy(ctx, g.decoy, now);
     const ready = now >= room.rewardActiveAt;
-    if (room.portal) { drawGlow(ctx, room.portal[0], room.portal[1], 60, [140, 100, 255], 0.5); drawPortal(ctx, room.portal[0], room.portal[1], now, ready); }
+    if (room.portal) { drawGlow(ctx, room.portal[0], room.portal[1], room.endPortal ? 90 : 60, room.endPortal ? [255, 210, 120] : [140, 100, 255], 0.5); drawPortal(ctx, room.portal[0], room.portal[1], now, ready, room.endPortal); }
+    if (isSpecialRoom(room)) drawSpecialRoom(ctx, room, now, p);
     for (const [gun, gx, gy] of (room.gunChoices || [])) { drawGlow(ctx, gx, gy, 46, gun.borderColor, 0.45); drawGunPickup(ctx, gun, gx, gy, now, hypot(p.x - gx, p.y - gy) < 110); }
     for (const L of g.lasers) if (L.state !== "active") drawRotatingLaser(ctx, L, now);
 
@@ -556,6 +559,7 @@ function drawGame(ctx, g, now) {
         if (pt.draw) pt.draw(ctx, now);
         else R.circle(ctx, pt.x, pt.y, Math.max(1, pt.size), pt.color);
     }
+    for (const d of (g.drops || [])) drawDrop(ctx, d, now);
     // 플레이어 (맞은 직후 깜빡임)
     const blink = now < p.invulnUntil && Math.floor(now / 70) % 2 === 0;
     if (!blink || g.gameOver) drawPlayerShape(ctx, p, now);
@@ -571,7 +575,8 @@ function drawGame(ctx, g, now) {
                       : b.owner === "skill" ? (b.color || [255, 240, 200]) : (b.gun ? ELEMENT_FX_COLOR[b.gun.element] || [255, 220, 120] : [255, 220, 120]);
             drawGlow(ctx, b.x, b.y, b.radius * 4 + 8, col, b.owner === "monster" ? 0.55 : 0.45);
         }
-        for (const [tx, ty, seed] of torches) drawGlow(ctx, tx, ty - 12, 34 + 3 * Math.sin((now + seed) / 90), [255, 150, 60], 0.55);
+        const tg = stageTheme(g.stage).glow;
+        for (const [tx, ty, seed] of torches) drawGlow(ctx, tx, ty - 12, 34 + 3 * Math.sin((now + seed) / 90), tg, 0.55);
         for (const z of (g.zones || [])) if (z.kind === "fire") drawGlow(ctx, z.x, z.y, z.r * 1.2, [255, 120, 40], 0.25);
     }
     // 피해 받으면 화면 가장자리가 붉게
@@ -594,18 +599,80 @@ function drawGame(ctx, g, now) {
     R.rect(ctx, hx, 44, 164, 18, [50, 0, 0], 0, 4);
     R.rect(ctx, hx + 2, 46, Math.max(0, 160 * Math.max(0, p.hp / p.maxHp)), 14, [220, 60, 60], 0, 3);
     R.text(ctx, `ATK ${playerShotDamage(p).toFixed(1)}`, hx + 190, 14, 20, [255, 255, 255], { shadow: true });
-    R.text(ctx, `STAGE ${g.stage}`, hx + 310, 14, 20, [255, 230, 140], { shadow: true });
+    R.text(ctx, `STAGE ${g.stage}/${FINAL_STAGE}`, hx + 300, 14, 20, [255, 230, 140], { shadow: true });
     R.text(ctx, `SCORE ${g.score}`, hx + 420, 14, 20, [170, 220, 255], { shadow: true });
     R.text(ctx, `ASPD ${p.shotsPerSec.toFixed(1)}/s   SPD ${p.speed.toFixed(1)}`, hx, 68, 14, [200, 200, 215]);
     R.text(ctx, ROOM_TYPE_LABEL[room.type] || room.type, SCREEN_W - 20, 18, 14, [230, 230, 235], { align: "right" });
+    // 골드 / 꿈가루 / 연속 정답 / 부활 / 시너지
+    R.text(ctx, `💰 ${g.gold || 0}   ✦ ${Meta.d.dust}`, SCREEN_W - 20, 40, 15, [255, 225, 130], { align: "right", bold: true, shadow: true });
+    let tail = "";
+    if (g.streak >= 2) tail += `🔥 연속 정답 ${g.streak}`;
+    if (p.revives > 0) tail += `${tail ? "   " : ""}❂ x${p.revives}`;
+    if (tail) R.text(ctx, tail, SCREEN_W - 20, 62, 14, [255, 170, 90], { align: "right", bold: true, shadow: true });
+    if (p._synTier > 0 && p.gun) R.text(ctx, `★ ${p.gun.elementName} 시너지 ${["", "I", "II", "완성"][p._synTier]}`, SKILL_HUD_X + SKILL_SLOTS * (SKILL_HUD_SIZE + SKILL_HUD_GAP) + 2, SKILL_HUD_Y + 12, 13, p.gun.color, { bold: true, shadow: true });
     const sec = Math.max(0, Math.floor(g.elapsedMs / 1000));
-    R.text(ctx, `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`, SCREEN_W - 20, 2, 14, [150, 150, 165], { align: "right" });
+    R.text(ctx, `${RunMods.depth ? `심연 ${RunMods.depth}  ·  ` : ""}${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`, SCREEN_W - 20, 2, 14, [150, 150, 165], { align: "right" });
     R.text(ctx, g.input.lastType === "touch" ? "이동: 화면을 누르고 끌기 (조이패드)   (공격은 자동)" : "이동: WASD / 방향키 / 마우스 끌기   (공격은 자동)", 20, SCREEN_H - 24, 14, [170, 170, 185]);
     drawSkillHud(ctx, p, now);
     drawMinimap(ctx, g.rooms, g.currentCoord, now);
     for (const pp of g.popups) R.text(ctx, pp.text, pp.x - 10, pp.y + pp.offset(now) - 10, 14, pp.color, { shadow: true });
+    if (g.banner && now < g.banner.until) drawTopBanner(ctx, g.banner, now);
+    if (g.flashUntil && now < g.flashUntil) { ctx.fillStyle = rgb(g.flashColor || [255, 255, 255], 0.45 * Math.min(1, (g.flashUntil - now) / 300)); ctx.fillRect(0, 0, SCREEN_W, SCREEN_H); }
     if (g.gameOver) drawCenterBanner(ctx, "GAME OVER", [255, 70, 70]);
     if (g.stageMessage) drawCenterBanner(ctx, g.stageMessage, [255, 220, 70]);
+}
+// 화면 위쪽 알림 (커졌다가 자리 잡는 글씨)
+function drawTopBanner(ctx, b, now) {
+    const t = (now - b.t0) / 1000, k = Math.min(1, t / 0.14), fade = Math.min(1, (b.until - now) / 300);
+    ctx.save(); ctx.globalAlpha = fade;
+    ctx.translate(SCREEN_W / 2, 150); ctx.scale(1.35 - 0.35 * k, 1.35 - 0.35 * k);
+    const w = Math.max(R.textWidth(ctx, b.text, 28, true), b.sub ? R.textWidth(ctx, b.sub, 16) : 0) + 40;
+    R.rect(ctx, -w / 2, -26, w, b.sub ? 66 : 44, "rgba(10,10,18,0.72)", 0, 10);
+    R.text(ctx, b.text, 0, -22, 28, b.color, { align: "center", bold: true, shadow: true });
+    if (b.sub) R.text(ctx, b.sub, 0, 12, 16, [235, 235, 245], { align: "center", shadow: true });
+    ctx.restore();
+}
+// 꿈가루 / 골드
+function drawDrop(ctx, d, now) {
+    const bob = Math.sin(now / 120 + d.x) * 1.5;
+    if (d.kind === "dust") {
+        drawGlow(ctx, d.x, d.y, 16, [200, 160, 255], 0.7);
+        drawKp(ctx, "star_07", d.x, d.y + bob, 16, [225, 200, 255], 1, now / 200, true);
+    } else {
+        R.circle(ctx, d.x, d.y + bob, 5.5, [255, 205, 70]); R.circle(ctx, d.x, d.y + bob, 5.5, [150, 100, 20], 1.5);
+        R.rect(ctx, d.x - 1, d.y + bob - 3, 2, 6, [255, 245, 190]);
+    }
+}
+// 특수 방 가운데 물건
+function drawSpecialRoom(ctx, room, now, p) {
+    const x = SPECIAL_X, y = SPECIAL_Y, sp = room.special || {}, bob = Math.sin(now / 260) * 3;
+    drawBlobShadow(ctx, x, y + 26, 40, 11, 0.4);
+    if (room.type === "treasure") {
+        if (!sp.opened) drawGlow(ctx, x, y, 80, [255, 210, 90], 0.55 + 0.15 * Math.sin(now / 200));
+        const lid = sp.opened ? -14 : bob;
+        R.rect(ctx, x - 30, y - 8, 60, 34, [130, 76, 36], 0, 5); R.rect(ctx, x - 30, y - 8, 60, 34, [255, 210, 90], 2, 5);
+        R.rect(ctx, x - 32, y - 24 + lid, 64, 18, [170, 100, 45], 0, 6); R.rect(ctx, x - 32, y - 24 + lid, 64, 18, [255, 210, 90], 2, 6);
+        R.rect(ctx, x - 6, y - 6, 12, 12, [255, 220, 100], 0, 2);
+        R.text(ctx, sp.opened ? "열린 상자" : "보물 상자 (다가가서 열기)", x, y + 36, 14, [255, 225, 140], { align: "center", shadow: true });
+    } else if (room.type === "shop") {
+        R.rect(ctx, x - 70, y - 4, 140, 30, [80, 56, 40], 0, 6); R.rect(ctx, x - 70, y - 4, 140, 30, [180, 140, 90], 2, 6);
+        const items = sp.items || [];
+        items.forEach((it, i) => {
+            const ix = x - 51 + i * 34, c = it.id === "_heal" ? null : CARD_BY_ID[it.id];
+            const col = it.sold ? [80, 80, 90] : c ? CARD_RARITY[c.r][1] : [120, 255, 150];
+            if (!it.sold) drawGlow(ctx, ix, y - 18 + bob, 18, col, 0.5);
+            R.circle(ctx, ix, y - 18 + (it.sold ? 0 : bob), 11, [22, 22, 32]); R.circle(ctx, ix, y - 18 + (it.sold ? 0 : bob), 11, col, 2);
+            R.text(ctx, it.sold ? "×" : c ? c.icon : "✚", ix, y - 27 + (it.sold ? 0 : bob), 13, col, { align: "center", bold: true });
+        });
+        R.text(ctx, "꿈의 상점 (다가가면 열림)", x, y + 32, 14, [170, 220, 255], { align: "center", shadow: true });
+    } else if (room.type === "altar") {
+        const left = ALTAR_USES - (sp.uses || 0);
+        if (left > 0) drawGlow(ctx, x, y - 10, 70, [190, 110, 255], 0.5 + 0.2 * Math.sin(now / 180));
+        R.rect(ctx, x - 34, y - 2, 68, 28, [60, 40, 70], 0, 4); R.rect(ctx, x - 34, y - 2, 68, 28, [190, 130, 255], 2, 4);
+        R.rect(ctx, x - 22, y - 24, 44, 24, [80, 50, 95], 0, 4);
+        if (left > 0) drawKp(ctx, "flare_01", x, y - 30 + bob, 40, [220, 150, 255], 0.9, now / 400, true);
+        R.text(ctx, left > 0 ? `운명의 제단 (남은 기회 ${left})` : "힘이 다한 제단", x, y + 32, 14, [215, 175, 255], { align: "center", shadow: true });
+    }
 }
 function drawCenterBanner(ctx, text, color) {
     const w = R.textWidth(ctx, text, 44, true), h = 50;
@@ -627,6 +694,8 @@ function drawMinimap(ctx, rooms, cur, now) {
         const isCur = r.x === cur[0] && r.y === cur[1];
         R.rect(ctx, px, py, cell, cell, isCur ? [255, 230, 60] : r.visited ? [120, 200, 120] : [65, 65, 78], 0, 2);
         if (r.type === "boss") R.rect(ctx, px + 1, py + 1, cell - 2, cell - 2, [230, 60, 60], 2, 2);
+        const icon = { treasure: ["$", [255, 210, 80]], shop: ["G", [120, 200, 255]], altar: ["?", [200, 140, 255]] }[r.type];
+        if (icon) { R.rect(ctx, px + 1, py + 1, cell - 2, cell - 2, icon[1], 2, 2); R.text(ctx, icon[0], px + cell / 2, py - 1, 11, isCur ? [40, 30, 0] : icon[1], { align: "center", bold: true }); }
         if (isCur) R.rect(ctx, px - pulse, py - pulse, cell + pulse * 2, cell + pulse * 2, [255, 255, 255], 1, 3);
     }
 }
@@ -683,7 +752,7 @@ function drawZoomButton(ctx, x, y, size) {
     R.circle(ctx, cx, cy, r, [235, 235, 245], 3);
     R.line(ctx, cx + r * 0.7, cy + r * 0.7, x + size * 0.78, y + size * 0.78, [235, 235, 245], 4);
 }
-function drawQuizScreen(ctx, q, now, touchMode) {
+function drawQuizScreen(ctx, q, now, touchMode, g) {
     ctx.fillStyle = rgb([16, 16, 24]); ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
     R.rect(ctx, 70, 60, SCREEN_W - 140, SCREEN_H - 120, [28, 28, 40], 0, 14);
     R.rect(ctx, 71, 61, SCREEN_W - 142, SCREEN_H - 122, [90, 90, 120], 2, 14);
@@ -713,7 +782,8 @@ function drawQuizScreen(ctx, q, now, touchMode) {
     const prob = q.questions[q.index];
     const targets = q.zoomTargets = [];        // [{rect, src}] 누르면 크게 보기
     const kind = q.flags[q.index] ? "   ·   오늘 복습" : "   ·   랜덤 연습 (복습 일정에 반영 안 됨)";
-    R.text(ctx, `문제 ${q.index + 1} / ${QUESTIONS_PER_ROOM}${kind}`, SCREEN_W / 2, 82, 14, [180, 180, 195], { align: "center" });
+    const streak = g && g.streak >= 1 ? `🔥 연속 정답 ${g.streak}   ·   ` : "";
+    R.text(ctx, `${streak}맞히면 강화 카드 3장 (연속 정답이면 더 좋게)${kind}`, SCREEN_W / 2, 82, 14, [200, 200, 215], { align: "center" });
 
     // 이미지 + 옆에 돋보기 버튼. 그린 높이를 돌려준다.
     const image = (src, x, y, maxW, maxH) => {
@@ -784,7 +854,7 @@ function drawQuizScreen(ctx, q, now, touchMode) {
     } else {
         lines(fit(exp, Math.floor(areaH / lh)), cx, top, size, [222, 222, 232], lh);
     }
-    R.text(ctx, `${cont}  다음 문제` + (targets.length ? "      " + zoomHint : ""), SCREEN_W / 2, SCREEN_H - 84, 14, [180, 200, 220], { align: "center" });
+    R.text(ctx, `${cont}  강화 카드 고르기` + (targets.length ? "      " + zoomHint : ""), SCREEN_W / 2, SCREEN_H - 84, 14, [255, 225, 140], { align: "center", bold: true });
 }
 const QUIZ_EXPLAIN_TOP = 296, QUIZ_EXPLAIN_BOTTOM = SCREEN_H - 94;
 
@@ -908,6 +978,12 @@ function drawFx(ctx, f, now, p) {
     if (f.follow === "player") { x = p.x; y = p.y; }
     if (f.followM && f.followM.hp > 0) { x = f.followM.x; y = f.followM.y; }
     switch (f.kind) {
+        case "spawnmark": {  // 2웨이브 등장 자리
+            R.circle(ctx, x, y, f.r * (0.4 + 0.6 * t), rgb(c, 0.25 + 0.25 * t));
+            R.circle(ctx, x, y, f.r, rgb(c, 0.8), 2);
+            if (Math.floor(now / 90) % 2) R.text(ctx, "!", x, y - 12, 20, [255, 230, 200], { align: "center", bold: true });
+            break;
+        }
         case "sweep": {      // 광선이 쓸고 지나갈 부채꼴 + 방향 화살표
             const warnK = clamp((now - f.t0) / f.warn, 0, 1), inWarn = now - f.t0 < f.warn;
             const a0 = f.start, a1 = f.start + f.span, lo = Math.min(a0, a1), hi = Math.max(a0, a1);
@@ -1175,7 +1251,7 @@ function drawSkillPick(ctx, sp, p, now, touchMode) {
     const rects = skillPickRects(sp, p);
     if (sp.phase === "choose") {
         R.text(ctx, "✨ 기억을 하나 고르세요", SCREEN_W / 2, 74, 28, [255, 225, 120], { align: "center", bold: true });
-        R.text(ctx, "이번 방은 능력치 성장 대신 기억을 얻습니다  ·  같은 기억을 고르면 +1 강화", SCREEN_W / 2, 112, 14, [185, 185, 205], { align: "center" });
+        R.text(ctx, "같은 기억을 고르면 +1 강화  ·  총과 같은 속성이면 시너지", SCREEN_W / 2, 112, 14, [185, 185, 205], { align: "center" });
         sp.options.forEach((id, i) => {
             const def = SKILL_BY_ID[id], owned = p.skills.find(s => s.id === id);
             const lvl = owned ? Math.min(SKILL_MAX_LEVEL, owned.level + 1) : 0;
@@ -1198,4 +1274,84 @@ function drawSkillPick(ctx, sp, p, now, touchMode) {
     const label = sp.phase === "choose" ? "선택" : (sp.sel === p.skills.length ? "받지 않기" : "버리고 교체");
     R.text(ctx, label, bx + bw / 2, by + 13, 22, on ? [255, 255, 255] : [130, 130, 150], { align: "center", bold: true });
     R.text(ctx, touchMode ? "카드를 누른 뒤 아래 버튼" : "←/→ 또는 1~4로 고르고 Enter  (마우스로 눌러도 됨)", SCREEN_W / 2, SCREEN_H - 84, 14, [180, 200, 220], { align: "center" });
+}
+
+// =============================================================
+// 강화 카드 / 상점 / 운명의 제단 화면 (게임 화면 위에 덮어서)
+// =============================================================
+const CARD_W = 200, CARD_H = 250, CARD_GAP = 14, CARD_Y = 170;
+function cardPickRects(cp) {
+    let n;
+    if (cp.mode === "pick") n = cp.options.length;
+    else if (cp.mode === "shop") n = cp.room.special.items.length;
+    else n = 2;
+    const w = cp.mode === "altar" ? 250 : n >= 5 ? 160 : n >= 4 ? 186 : CARD_W;
+    const h = cp.mode === "altar" ? 120 : CARD_H;
+    const total = n * w + (n - 1) * CARD_GAP, x0 = SCREEN_W / 2 - total / 2;
+    const cards = Array.from({ length: n }, (_, i) => [x0 + i * (w + CARD_GAP), cp.mode === "altar" ? 300 : CARD_Y, w, h]);
+    const close = cp.mode === "shop" ? [SCREEN_W / 2 - 90, CARD_Y + CARD_H + 26, 180, 46] : null;
+    return { cards, close };
+}
+function drawCardFace(ctx, rect, c, g, now, k, extra) {
+    const [x, y, w, h] = rect, rc = CARD_RARITY[c.r], col = rc[1];
+    ctx.save(); ctx.globalAlpha *= k;
+    ctx.translate(x + w / 2, y + h / 2); ctx.scale(0.85 + 0.15 * k, 0.85 + 0.15 * k); ctx.translate(-(x + w / 2), -(y + h / 2));
+    if (c.r !== "common") drawGlow(ctx, x + w / 2, y + h / 2, w * 0.75, col, c.r === "legend" ? 0.55 + 0.2 * Math.sin(now / 140) : 0.35);
+    R.rect(ctx, x, y, w, h, [26, 26, 40], 0, 14);
+    R.rect(ctx, x + 1.5, y + 1.5, w - 3, h - 3, col, c.r === "legend" ? 4 : c.r === "rare" ? 3 : 2, 14);
+    R.rect(ctx, x + w / 2 - 34, y + 12, 68, 22, shadeColor(col, -120), 0, 6);
+    R.text(ctx, rc[0], x + w / 2, y + 15, 13, col, { align: "center", bold: true });
+    R.circle(ctx, x + w / 2, y + 80, 34, rgb(c.color, 0.16)); R.circle(ctx, x + w / 2, y + 80, 34, c.color, 2);
+    R.text(ctx, c.icon, x + w / 2, y + 62, 32, c.color, { align: "center", bold: true });
+    R.text(ctx, c.name, x + w / 2, y + 126, 19, [255, 255, 255], { align: "center", bold: true });
+    const lines = wrapTextLines(ctx, cardDesc(g, c), w - 24, 14);
+    lines.slice(0, 4).forEach((l, i) => R.text(ctx, l, x + w / 2, y + 158 + i * 21, 14, [220, 220, 232], { align: "center" }));
+    if (extra) extra(x, y, w, h);
+    ctx.restore();
+}
+function drawCardPick(ctx, g, cp, now, touch) {
+    ctx.fillStyle = "rgba(8,8,16,0.8)"; ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    const age = now - cp.openedAt;
+    R.text(ctx, cp.title, SCREEN_W / 2, 74, 30, cp.color, { align: "center", bold: true, shadow: true });
+    if (cp.sub) R.text(ctx, cp.sub, SCREEN_W / 2, 118, 16, [225, 225, 235], { align: "center" });
+    const rects = cardPickRects(cp);
+    if (cp.mode === "pick") {
+        cp.options.forEach((c, i) => {
+            const k = clamp((age - i * 70) / 160, 0, 1);
+            if (k > 0) drawCardFace(ctx, rects.cards[i], c, g, now, k, (x, y, w, h) =>
+                R.text(ctx, touch ? "누르면 선택" : `${i + 1}번 키 / 클릭`, x + w / 2, y + h - 26, 12, [140, 140, 165], { align: "center" }));
+        });
+    } else if (cp.mode === "shop") {
+        R.text(ctx, `💰 ${g.gold} 골드`, SCREEN_W / 2, 140, 18, [255, 225, 130], { align: "center", bold: true });
+        cp.room.special.items.forEach((it, i) => {
+            const r = rects.cards[i];
+            const priceLine = (x, y, w, h) => {
+                const can = !it.sold && g.gold >= it.price;
+                R.rect(ctx, x + 16, y + h - 40, w - 32, 28, it.sold ? [50, 50, 60] : can ? [47, 125, 79] : [90, 50, 50], 0, 8);
+                R.text(ctx, it.sold ? "판매 완료" : `${it.price} 골드`, x + w / 2, y + h - 35, 15, [255, 255, 255], { align: "center", bold: true });
+            };
+            if (it.id === "_heal") {
+                const fake = { r: "common", name: "회복 물약", icon: "✚", color: [120, 255, 150], desc: `최대 체력의 ${Math.round(SHOP_HEAL_RATIO * 100)}% 회복` };
+                drawCardFace(ctx, r, fake, g, now, it.sold ? 0.5 : 1, priceLine);
+            } else drawCardFace(ctx, r, CARD_BY_ID[it.id], g, now, it.sold ? 0.5 : 1, priceLine);
+        });
+    } else {
+        const p = g.player, sp = cp.room.special, left = ALTAR_USES - sp.uses;
+        const labels = [[`체력 ${fmtNum(altarCost(p))} 바치기`, left > 0 ? `남은 기회 ${left}번 · 희귀/전설 카드 또는 꽝` : "힘이 다했어요", [190, 120, 255]],
+                        ["떠나기", "제단을 떠납니다", [150, 150, 170]]];
+        labels.forEach(([t1, t2, col], i) => {
+            const [x, y, w, h] = rects.cards[i];
+            R.rect(ctx, x, y, w, h, [30, 26, 42], 0, 14); R.rect(ctx, x + 1.5, y + 1.5, w - 3, h - 3, col, 3, 14);
+            R.text(ctx, t1, x + w / 2, y + 34, 20, [255, 255, 255], { align: "center", bold: true });
+            R.text(ctx, t2, x + w / 2, y + 72, 13, [210, 200, 225], { align: "center" });
+        });
+        drawGlow(ctx, SCREEN_W / 2, 220, 70, [190, 110, 255], 0.5 + 0.2 * Math.sin(now / 160));
+        drawKp(ctx, "flare_01", SCREEN_W / 2, 220, 80, [220, 160, 255], 0.9, now / 500, true);
+    }
+    if (cp.msg && now - cp.msgAt < 1600) R.text(ctx, cp.msg, SCREEN_W / 2, cp.mode === "altar" ? 440 : CARD_Y + CARD_H + 80, 18, [255, 230, 150], { align: "center", bold: true, shadow: true });
+    if (rects.close) {
+        const [bx, by, bw, bh] = rects.close;
+        R.rect(ctx, bx, by, bw, bh, [52, 52, 70], 0, 10); R.rect(ctx, bx + 1, by + 1, bw - 2, bh - 2, [150, 150, 180], 2, 10);
+        R.text(ctx, cp.mode === "shop" ? "나가기" : "닫기", bx + bw / 2, by + 11, 20, [255, 255, 255], { align: "center", bold: true });
+    }
 }

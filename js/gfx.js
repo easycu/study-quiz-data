@@ -76,7 +76,7 @@ async function loadGfx() {
         add(`assets/kp/${k}.png`, img => { GFX.kp[k] = img; });
     }
     for (const k of ["floor_battle", "floor_start", "floor_boss", "crate", "brick", "pillar", "rock", "skull", "bone",
-                     "pebbles", "grass1", "grass2", "grass3", "crack", "field"]) {
+                     "pebbles", "grass1", "grass2", "grass3", "crack", "field", "floor_forest", "floor_ice", "floor_lava", "floor_dream"]) {
         add(`assets/tiles/${k}.png`, img => { GFX.tiles[k] = img; });
     }
     await Promise.all(jobs);
@@ -211,13 +211,28 @@ function _seeded(seed) { let s = seed >>> 0 || 1; return () => (s = (s * 1664525
 const ROOM_AMBIENT = {     // [어둠 색, 어둠 진하기]
     start: [[14, 18, 30], 0.45], battle: [[6, 6, 16], 0.74], boss: [[26, 4, 8], 0.78],
 };
+// ---------------- 스테이지 테마 (2스테이지마다 바뀜) ----------------
+const STAGE_THEMES = [
+    { id: "forest", name: "꿈꾸는 숲", floor: "floor_forest", deco: ["grass1", "grass2", "grass3", "pebbles", "grass1", "grass2"], dark: [[4, 14, 8], 0.68],
+      accent: [150, 235, 130], glow: [255, 190, 90], musicRate: 1.0 },
+    { id: "cave", name: "메아리 동굴", floor: "floor_battle", deco: ["skull", "bone", "pebbles", "crack", "rock", "pebbles", "crack"], dark: [[6, 6, 16], 0.74],
+      accent: [235, 195, 140], glow: [255, 150, 60], musicRate: 0.97 },
+    { id: "ice", name: "얼어붙은 호수", floor: "floor_ice", deco: ["pebbles", "crack", "rock", "crack"], decoTint: [190, 225, 255], dark: [[4, 12, 30], 0.72],
+      accent: [150, 215, 255], glow: [140, 200, 255], musicRate: 0.93 },
+    { id: "lava", name: "불타는 심장", floor: "floor_lava", deco: ["crack", "rock", "skull", "crack", "pebbles"], decoTint: [255, 130, 60], dark: [[26, 6, 2], 0.72],
+      accent: [255, 140, 70], glow: [255, 110, 40], musicRate: 1.06 },
+    { id: "dream", name: "꿈의 끝", floor: "floor_dream", deco: ["*star_06", "*star_07", "pebbles", "*star_07"], decoTint: [220, 180, 255], dark: [[16, 4, 26], 0.76],
+      accent: [215, 165, 255], glow: [200, 140, 255], musicRate: 0.9 },
+];
+function stageTheme(stage) { return STAGE_THEMES[clamp(Math.floor(((stage || 1) - 1) / 2), 0, STAGE_THEMES.length - 1)]; }
 function roomFloor(room, stage) {
     if (room._floor && room._floorStage === stage) return room._floor;
     const W = PLAY_RIGHT - PLAY_LEFT, H = PLAY_BOTTOM - PLAY_TOP;
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const g = c.getContext("2d");
     g.imageSmoothingEnabled = false;
-    const tile = GFX.tiles[room.type === "start" ? "floor_start" : room.type === "boss" ? "floor_boss" : "floor_battle"];
+    const th = stageTheme(stage);
+    const tile = GFX.tiles[th.floor] || GFX.tiles[room.type === "start" ? "floor_start" : room.type === "boss" ? "floor_boss" : "floor_battle"];
     if (tile) {
         const tw = tile.width * 2, th = tile.height * 2;
         for (let y = 0; y < H; y += th) for (let x = 0; x < W; x += tw) g.drawImage(tile, x, y, tw, th);
@@ -226,19 +241,27 @@ function roomFloor(room, stage) {
     const vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.7);
     vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.45)");
     g.fillStyle = vg; g.fillRect(0, 0, W, H);
+    // 방 종류에 따라 바닥 색을 조금 다르게
+    const tintBy = { boss: "rgba(120,10,20,0.09)", treasure: "rgba(255,200,80,0.10)", shop: "rgba(80,170,255,0.10)", altar: "rgba(170,80,255,0.14)", start: "rgba(255,255,255,0.05)" }[room.type];
+    if (tintBy) { g.fillStyle = tintBy; g.fillRect(0, 0, W, H); }
     // 장식 (바닥 무늬): 장애물 자리는 피함
     const rnd = _seeded((room.x + 50) * 7919 + (room.y + 50) * 104729 + stage * 31);
     const obs = room.obstacles || [];
-    const decoKeys = room.type === "start" ? ["grass1", "grass2", "grass3", "pebbles"] : ["skull", "bone", "pebbles", "crack", "rock", "grass1", "pebbles", "crack"];
+    const decoKeys = th.deco;
     const n = room.type === "start" ? 14 : 18;
     for (let i = 0; i < n; i++) {
         const x = PLAY_LEFT + 30 + rnd() * (W - 60), y = PLAY_TOP + 30 + rnd() * (H - 60);
         if (obs.some(o => o.overlapsCircle(x, y, 20))) continue;
-        const img = GFX.tiles[decoKeys[Math.floor(rnd() * decoKeys.length)]];
+        const key = decoKeys[Math.floor(rnd() * decoKeys.length)];
+        const isKp = key[0] === "*";
+        let img = isKp ? GFX.kp[key.slice(1)] : GFX.tiles[key];
         if (!img) continue;
-        g.globalAlpha = 0.55 + rnd() * 0.3;
-        const s = 2;
-        g.drawImage(img, Math.round(x - PLAY_LEFT - 8 * s), Math.round(y - PLAY_TOP - 8 * s), 16 * s, 16 * s);
+        if (th.decoTint) img = coloredImage(img, th.decoTint);
+        g.globalAlpha = isKp ? 0.35 + rnd() * 0.3 : 0.55 + rnd() * 0.3;
+        const s = 2, size = isKp ? 18 + rnd() * 20 : 16 * s;
+        if (isKp || !th.decoTint) g.drawImage(img, Math.round(x - PLAY_LEFT - size / 2), Math.round(y - PLAY_TOP - size / 2), size, size);
+        else { g.drawImage(GFX.tiles[key], Math.round(x - PLAY_LEFT - size / 2), Math.round(y - PLAY_TOP - size / 2), size, size);
+               g.globalAlpha *= 0.45; g.drawImage(img, Math.round(x - PLAY_LEFT - size / 2), Math.round(y - PLAY_TOP - size / 2), size, size); }
     }
     g.globalAlpha = 1;
     room._floor = c; room._floorStage = stage;
@@ -313,9 +336,14 @@ function _lightCtx() {
     return Light.ctx;
 }
 // lights: [[x, y, 반지름, 세기(0~1)]]  -> 어둠에서 그만큼 구멍을 낸다
-function drawDarkness(ctx, roomType, lights) {
+function drawDarkness(ctx, roomType, lights, theme) {
     if (!Opts.high) return;
-    const [col, dark] = ROOM_AMBIENT[roomType] || ROOM_AMBIENT.battle;
+    let [col, dark] = ROOM_AMBIENT[roomType] || ROOM_AMBIENT.battle;
+    if (theme) {
+        col = theme.dark[0]; dark = theme.dark[1];
+        if (roomType === "boss") { col = [Math.min(255, col[0] + 8), col[1], col[2]]; dark += 0.03; }
+        else if (roomType !== "battle") dark -= 0.22;      // 시작방·특수방은 밝게
+    }
     const lc = _lightCtx(), s = Light.scale, img = GFX.kp.circle_05;
     lc.globalCompositeOperation = "source-over";
     lc.clearRect(0, 0, Light.canvas.width, Light.canvas.height);

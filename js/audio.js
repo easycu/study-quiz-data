@@ -7,7 +7,7 @@
 
 const Sound = {
     ctx: null, master: null, buffers: {}, last: {}, unlocked: false, loading: false,
-    music: null, musicName: null, musicEls: {}, duck: 1,
+    music: null, musicName: null, musicEls: {}, duck: 1, musicRate: 1,
 
     init() {
         const unlock = () => {
@@ -94,12 +94,21 @@ const Sound = {
             this.musicEls[name] = el;
         }
         this.music = el;
+        this._applyRate(el);
         this._setVol(el, 0);
         if (Opts.data.music) {
             el.currentTime = 0;
             el.play().catch(() => {});
             this._fade(el, Opts.data.musicVol * this.duck, 600);
         }
+    },
+    // 테마마다 음악 빠르기/높이를 살짝 바꿔 분위기를 다르게
+    setMusicRate(r) {
+        this.musicRate = r || 1;
+        for (const el of Object.values(this.musicEls)) this._applyRate(el);
+    },
+    _applyRate(el) {
+        try { el.preservesPitch = false; el.mozPreservesPitch = false; el.webkitPreservesPitch = false; el.playbackRate = this.musicRate || 1; } catch (e) { /* 무시 */ }
     },
     setDuck(k) {       // 문제 풀 때는 음악을 작게
         if (Math.abs(this.duck - k) < 0.01) return;

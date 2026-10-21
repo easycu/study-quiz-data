@@ -8,19 +8,19 @@ function monsterCountRange(stage) {
     const extra = Math.floor((stage - 1) / MONSTER_COUNT_STAGE_STEP);
     let lo = Math.min(MIN_MONSTERS_PER_ROOM + extra, MONSTER_COUNT_MIN_CAP);
     let hi = Math.min(MAX_MONSTERS_PER_ROOM + extra, MONSTER_COUNT_MAX_CAP);
-    lo = Math.max(1, pyRound(lo * MONSTER_COUNT_MULT));
-    hi = Math.max(lo, pyRound(hi * MONSTER_COUNT_MULT));
+    lo = Math.max(1, pyRound(lo * MONSTER_COUNT_MULT)) + RunMods.countAdd;
+    hi = Math.max(lo, pyRound(hi * MONSTER_COUNT_MULT) + RunMods.countAdd);
     return [lo, hi];
 }
 
 function scaleHp(base, power) {
     const s = power - 1;
-    return Math.max(1, pyRound(base * (1 + STAGE_HP_GROWTH_LINEAR * s + STAGE_HP_GROWTH_QUAD * s * s)));
+    return Math.max(1, pyRound(base * (1 + STAGE_HP_GROWTH_LINEAR * s + STAGE_HP_GROWTH_QUAD * s * s) * RunMods.hpMult));
 }
 function scaleDmg(base, power) {
     if (base <= 0) return 0;
     const s = power - 1;
-    return Math.max(1, pyRound(base * (1 + STAGE_DMG_GROWTH_LINEAR * s + STAGE_DMG_GROWTH_QUAD * s * s)));
+    return Math.max(1, pyRound(base * (1 + STAGE_DMG_GROWTH_LINEAR * s + STAGE_DMG_GROWTH_QUAD * s * s) * RunMods.dmgMult));
 }
 function scaleMonsterSpeed(base, power) {
     return base * Math.min(STAGE_MONSTER_SPEED_CAP, 1 + STAGE_MONSTER_SPEED_GROWTH * (power - 1));
@@ -90,12 +90,34 @@ class Player {
         this.volleyUntil = 0; this.volleyDmg = 0;
         this.trailUntil = 0; this.trailNext = 0; this.trailSk = null; this.trailDmg = 0;
         this.skillBoost = 0;
+        // 강화 카드 / 별자리로 붙는 능력
+        this.critBonus = 0; this.critDmg = 0;      // 치명타 확률 / 치명타 피해 추가
+        this.dmgMult = 1;                          // 모든 피해 배율 (별자리)
+        this.aspdPct = 0;                          // 공격속도 % (별자리 / 카드)
+        this.bigDmg = 0;                           // 엘리트·보스 추가 피해
+        this.execute = 0;                          // 체력 30% 이하 적 추가 피해
+        this.extraShots = 0; this.pierceBonus = 0;
+        this.lifesteal = 0;                        // 처치할 때마다 회복
+        this.roomShield = 0;                       // 전투 시작 때 최대 체력 비율 보호막
+        this.revives = 0;
+        this.invulnBonus = 0;
+        this.clearHeal = 0;                        // 방 클리어 회복 (최대 체력 비율)
+        this._synTier = 0;
     }
 }
+function critChance(p) { return CRIT_CHANCE + (p ? p.critBonus : 0); }
+function critMult(p) { return CRIT_MULTIPLIER + (p ? p.critDmg : 0); }
+// 총과 같은 속성의 기억 개수 = 시너지 단계 (0~3)
+function synergyTier(p) {
+    if (!p.gun) return 0;
+    return p.skills.filter(s => skillHasSynergy(SKILL_BY_ID[s.id], p.gun)).length;
+}
+const SYNERGY_GUN_BONUS = [0, 0, 0.12, 0.3];       // 시너지 2·3단계: 총 피해 추가
+const SYNERGY_CD_MULT = [1, 1, 1, 0.85];           // 시너지 3단계(완성): 기억 쿨타임 -15%
 function playerAspdMult(p, now) {
     let m = 1;
     for (const b of p.aspdBuffs) if (now < b.until) m *= b.mult;
-    return m;
+    return m * (1 + (p.aspdPct || 0));
 }
 
 // ---------------- 몬스터 ----------------
@@ -215,7 +237,7 @@ class Boss extends Monster {
         this.parts = this.variant === "hybrid" ? pickHybridParts(this.stage) : [this.variant];
         const defs = this.parts.map(v => BOSS_DEFS[v]);
         const hpMult = Math.max(...defs.map(d => d.hpMult || 1)) * (this.variant === "hybrid" ? 1.15 : 1);
-        this.hp = pyRound(scaleHp(BOSS_BASE_HP, this.power) * hpMult);
+        this.hp = pyRound(scaleHp(BOSS_BASE_HP, this.power) * hpMult * BOSS_HP_EXTRA);
         this.maxHp = this.hp;
         this.radius = BOSS_RADIUS;
         this.speed = scaleMonsterSpeed(1.3 * (defs[0].speed || 1), this.power);
@@ -363,7 +385,7 @@ function rollGunGrade() {
 function rollGunChoices(count) {
     return sample(GUN_ELEMENT_ORDER, count || GUN_CHOICE_COUNT).map(el => new Gun(el, rollGunGrade()));
 }
-function playerShotDamage(p) { return p.gun ? p.atk * (1 + p.gun.atkBonus) : p.atk; }
+function playerShotDamage(p) { return (p.gun ? p.atk * (1 + p.gun.atkBonus + SYNERGY_GUN_BONUS[p._synTier || 0]) : p.atk) * (p.dmgMult || 1); }
 function perfectQuizHealAmount(p, correct) {
     if (correct < QUESTIONS_PER_ROOM) return 0;
     return Math.max(0, p.maxHp - p.hp) * PERFECT_QUIZ_HEAL_RATIO;
@@ -383,7 +405,19 @@ function makePlayerBullets(p, dx, dy) {
     }
     const b = new Bullet(p.x, p.y, dx, dy, 8, dmg, "player", false, gun ? 6 : 5, gun);
     if (gun && gun.element === "wind") { b.pierceLeft = gun.effectValue; b.hitSet = new Set(); }
-    return [b];
+    const out = [b];
+    // 카드 "총알 +1": 양옆으로 조금 약한 총알
+    for (let k = 1; k <= (p.extraShots || 0); k++) {
+        for (const sgn of [-1, 1]) {
+            if (out.length > 1 + 2 * (p.extraShots || 0)) break;
+            const [ndx, ndy] = rotateDirection(dx, dy, sgn * 9 * k);
+            const e = new Bullet(p.x, p.y, ndx, ndy, 8, dmg * 0.5, "player", false, 5, gun);
+            if (gun && gun.element === "wind") { e.pierceLeft = gun.effectValue; e.hitSet = new Set(); }
+            out.push(e);
+        }
+    }
+    if (p.pierceBonus) for (const o of out) { o.pierceLeft = (o.pierceLeft || 0) + p.pierceBonus; o.hitSet = o.hitSet || new Set(); }
+    return out;
 }
 function monsterIsSlowed(m, now) { return now < m.slowUntil; }
 function monsterIsStunned(m, now) { return now < m.stunUntil; }
@@ -703,6 +737,7 @@ class Room {
         this.connections = {};
         this.obstacles = null;
         this.gunChoices = null; this.portal = null; this.rewardActiveAt = 0;
+        this.special = null;           // 보물방/상점/제단 상태
     }
 }
 const DIRECTIONS = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] };
@@ -713,7 +748,8 @@ function generateDungeonOnce() {
     const start = new Room(0, 0, "start"); start.visited = true; start.cleared = true;
     rooms.set(ck(0, 0), start);
     const all = [[0, 0]], frontier = [[0, 0]];
-    const target = randInt(6, 8);
+    const nSpecial = Math.random() < 0.5 ? 3 : 2;      // 보물방 + 상점 (+ 50% 운명의 제단)
+    const target = randInt(6, 8) + nSpecial;
     while (rooms.size < target && frontier.length) {
         const cur = choice(frontier);
         const dirs = shuffle(Object.entries(DIRECTIONS));
@@ -748,6 +784,16 @@ function generateDungeonOnce() {
     }
     if (!boss) boss = all[all.length - 1];
     rooms.get(ck(boss[0], boss[1])).type = "boss";
+    // 특수 방: 문이 적은(구석) 방부터. 시작방 바로 옆은 되도록 피함
+    const deg = r => Object.keys(r.connections).length;
+    const cands = [...rooms.values()].filter(r => r.type === "battle")
+        .sort((a, b) => deg(a) - deg(b) || (dist.get(ck(b.x, b.y)) || 0) - (dist.get(ck(a.x, a.y)) || 0));
+    const kinds = ["treasure", "shop", "altar"].slice(0, nSpecial);
+    for (const kind of kinds) {
+        if (cands.length <= 3) break;          // 전투방은 최소 3개 남긴다
+        const r = cands.shift();
+        r.type = kind; r.cleared = true;
+    }
     return [rooms, [0, 0]];
 }
 // 시작방에서 각 방까지 몇 칸인지 (blocked 방은 지나가지 않음)

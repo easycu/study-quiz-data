@@ -13,12 +13,13 @@ const PLAY_LEFT = 30, PLAY_RIGHT = SCREEN_W - 30, PLAY_TOP = 100, PLAY_BOTTOM = 
 
 const SCORE_PER_KILL = 10, SCORE_PER_ELITE_KILL = 30, SCORE_PER_STAGE_CLEAR = 200;
 const MAX_SCORE_ENTRIES = 50;
-const QUESTIONS_PER_ROOM = 5;
+const QUESTIONS_PER_ROOM = 1;          // 방 하나 = 문제 하나 (빠른 전개)
 
 const MIN_MONSTERS_PER_ROOM = 4, MAX_MONSTERS_PER_ROOM = 8;
 const MONSTER_COUNT_STAGE_STEP = 3, MONSTER_COUNT_MIN_CAP = 7, MONSTER_COUNT_MAX_CAP = 12;
 const MONSTER_COUNT_MULT = 0.7;
-const MONSTER_HP_MULT = 1.1;
+const MONSTER_HP_MULT = 1.35;       // 강화 카드로 빨리 강해지는 만큼 (예전 1.1)
+const BOSS_HP_EXTRA = 1.4;          // 보스도 같은 이유로
 const MIN_MONSTER_SPAWN_DIST = 190, MONSTER_SPAWN_MAX_TRIES = 30;
 
 const ELITE_SPAWN_CHANCE = 0.15, ELITE_HP_MULT = 1.8, ELITE_DMG_MULT = 1.4, ELITE_RADIUS_MULT = 1.25, ELITE_KILL_HEAL = 10;
@@ -253,8 +254,49 @@ const SM2_DEFAULT_EF = 2.5, SM2_MIN_EF = 1.3, SM2_MAX_EF = 5.0, SM2_MAX_INTERVAL
 const ANSWER_TIME_EASY_MAX_SEC = 5.0, ANSWER_TIME_NORMAL_MAX_SEC = 10.0;
 const ANSWER_TIER_LABEL_KO = { easy: "쉬움", normal: "보통", hard: "어려움" };
 
-const ROOM_TYPE_LABEL = { start: "시작방", battle: "전투방", boss: "보스방" };
-const ROOM_BG_COLOR = { start: [40, 42, 56], battle: [38, 34, 48], boss: [55, 28, 32] };
+const ROOM_TYPE_LABEL = { start: "시작방", battle: "전투방", boss: "보스방", treasure: "보물방", shop: "상점", altar: "운명의 제단" };
+const ROOM_BG_COLOR = { start: [40, 42, 56], battle: [38, 34, 48], boss: [55, 28, 32], treasure: [52, 46, 30], shop: [36, 44, 52], altar: [46, 30, 56] };
+
+// =============================================================
+// 빠른 전개 / 성장 카드 / 영구 성장 / 엔딩
+// =============================================================
+// ---- 강화 카드 ----
+const CARD_RARITY = {          // [이름, 색, 기본 확률]
+    common: ["일반", [200, 200, 215], 0.74],
+    rare: ["희귀", [90, 170, 255], 0.22],
+    legend: ["전설", [255, 175, 50], 0.04],
+};
+const CARDS_ON_CORRECT = 3, CARDS_ON_STREAK = 4, CARDS_ON_WRONG = 2;
+const STREAK_FOR_EXTRA_CARD = 3;                 // 연속 정답 3번부터 카드 4장 (지혜 별자리로 2번)
+const STREAK_RARE_EVERY = 3, STREAK_LEGEND_EVERY = 5;   // 3연속마다 희귀 확정, 5연속마다 전설 확정
+const CORRECT_HEAL_RATIO = 0.10;                 // 정답: 잃은 체력의 10% 회복
+// ---- 방 클리어 연출 / 별 / 골드 ----
+const CLEAR_SLOWMO_FRAMES = 24;                  // 마지막 처치 슬로모션 (화면 기준 0.4초, 게임 시간은 1/3)
+const CLEAR_TO_QUIZ_MS = 650;                    // 클리어 후 문제가 뜨기까지
+const STAR_PAR_BASE_SEC = 5, STAR_PAR_PER_MONSTER_SEC = 1.4;   // 별 3개 기준 시간 = 5초 + 몬스터당 1.4초
+const STAR_GOLD = [2, 5, 8, 12];                 // 별 0~3개 골드
+const ELITE_GOLD = 4;
+// ---- 2웨이브 ----
+const WAVE1_RATIO = 0.7, WAVE2_RATIO = 0.6, WAVE2_DELAY_MS = 700;
+// ---- 특수 방 ----
+const SHOP_PRICE = { common: 18, rare: 35, legend: 70 }, SHOP_HEAL_PRICE = 15, SHOP_HEAL_RATIO = 0.4;
+const ALTAR_HP_COST = 0.15, ALTAR_USES = 2;      // 체력 15%를 바치고 뽑기, 최대 2번
+// ---- 꿈가루 (영구 성장 재화) ----
+const DUST_NORMAL_CHANCE = 0.05, DUST_ELITE = [2, 3], DUST_BOSS_BASE = 8, DUST_BOSS_PER_STAGE = 2, DUST_STAGE_CLEAR_PER_STAGE = 3;
+// ---- 엔딩 / 꿈의 심연 ----
+const FINAL_STAGE = 10;
+const FINAL_BOSS_HP_MULT = 1.35;
+const ABYSS_HP_PER_DEPTH = 0.3, ABYSS_DMG_PER_DEPTH = 0.15, ABYSS_COUNT_PER_DEPTH = 0.5, ABYSS_DUST_PER_DEPTH = 0.3;
+const ENDING_DUST_BASE = 50;
+// 이번 판 난이도 배율 (심연 단계에 따라 게임 시작 때 정해짐)
+const RunMods = { depth: 0, hpMult: 1, dmgMult: 1, countAdd: 0, dustMult: 1 };
+function setRunDepth(d) {
+    RunMods.depth = d;
+    RunMods.hpMult = 1 + ABYSS_HP_PER_DEPTH * d;
+    RunMods.dmgMult = 1 + ABYSS_DMG_PER_DEPTH * d;
+    RunMods.countAdd = Math.round(ABYSS_COUNT_PER_DEPTH * d);
+    RunMods.dustMult = 1 + ABYSS_DUST_PER_DEPTH * d;
+}
 
 const MONSTER_SKIN_MELEE = "bamboo", MONSTER_SKIN_MELEE_DASH = "squid", MONSTER_SKIN_RANGED = "spirit", MONSTER_SKIN_BOSS = "raccoon";
 const ANIM_FRAME_MS = 140;

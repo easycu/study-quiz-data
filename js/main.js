@@ -63,7 +63,7 @@ function draw() {
 }
 
 // ---------------- 화면 전환 ----------------
-const OVERLAYS = ["menu", "ranking", "settings", "nameEntry", "pause"];
+const OVERLAYS = ["menu", "ranking", "settings", "nameEntry", "pause", "depthSelect", "stars", "notes"];
 function show(id) {
     for (const o of OVERLAYS) $(o).classList.toggle("hidden", o !== id);
     $("pauseBtn").classList.toggle("hidden", !(game && id === null));
@@ -108,17 +108,36 @@ function tryFullscreenLandscape() {
         }
     } catch (e) { /* 무시 */ }
 }
-function startGame() {
+function startGame(opts) {
     tryFullscreenLandscape();
-    game = new Game(onGameEnd);
+    game = new Game(onGameEnd, opts);
+    if (opts && opts.save) game.wantSave = true;     // 이어한 판은 바로 다시 저장 (곧바로 나가도 판이 남게)
     game.onPauseChange = paused => show(paused ? "pause" : null);
     Input.handler = game;
     Input.keys.clear();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     show(null);
 }
-function onGameEnd(result) {
-    $("finalScore").textContent = `점수 ${result.score}  ·  스테이지 ${result.stage}  ·  처치 ${result.kills}`;
+function onGameEnd(r) {
+    const st = r.stats, acc = st.asked ? Math.round(st.correct / st.asked * 100) : 0;
+    const sec = Math.floor(r.timeMs / 1000), time = `${Math.floor(sec / 60)}분 ${sec % 60}초`;
+    $("resTitle").textContent = r.won ? "🌙 꿈에서 깨어났다!" : "게임 오버";
+    const end = $("resEnding");
+    if (r.won) {
+        end.classList.remove("hidden");
+        end.innerHTML = (r.depth ? `꿈의 심연 ${r.depth}단계를 돌파했어요!` : "모든 스테이지를 클리어했어요!") +
+            `<br>엔딩 보너스 꿈가루 +${st.endingDust}` + (st.opened ? `<br><b>✦ 꿈의 심연 ${r.depth + 1}단계가 열렸어요!</b> (몬스터가 더 강해지고 꿈가루를 더 줘요)` : "");
+    } else end.classList.add("hidden");
+    const cell = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+    $("finalScore").innerHTML =
+        cell("점수", r.score.toLocaleString()) + cell("도달", (r.depth ? `심연 ${r.depth} · ` : "") + `스테이지 ${r.stage}`) + cell("시간", time) + cell("처치", r.kills) +
+        cell("정답률", `${st.correct}/${st.asked} (${acc}%)`) + cell("최고 연속 정답", st.bestStreak) + cell("방 별점", `★ ${st.stars}`) +
+        cell("얻은 꿈가루", `✦ ${st.dust}`) + cell("고른 카드", st.cards) + cell("총", esc(r.gun || "없음")) +
+        `<div class="wide2"><span>기억</span><b>${esc(r.skills.join(", ") || "없음")}</b></div>`;
+    const wrong = st.wrong || [];
+    $("resWrongTitle").textContent = wrong.length ? `이번 판에 틀린 문제 (${wrong.length})` : "이번 판에 틀린 문제 없음 👏";
+    $("resWrong").innerHTML = wrong.map(w => `<div class="note"><div class="q">${w.img && !w.q ? "(이미지 문제)" : esc(w.q)}</div>` +
+        `<div class="a">정답 <b>${esc(w.a)}</b>${w.e ? " · " + esc(w.e) : ""}</div></div>`).join("");
     $("nameInput").value = localStorageName();
     show("nameEntry");
     $("pauseBtn").classList.add("hidden");
@@ -128,12 +147,102 @@ function backToMenu() {
     game = null;
     Input.handler = null;
     Input.releaseJoystick();
+    refreshMenu();
     show("menu");
 }
+// 메뉴: 이어하기 / 꿈가루 표시
+let startArmed = false;
+function refreshMenu() {
+    const sv = RunSave.exists();
+    const c = $("btnContinue");
+    c.classList.toggle("hidden", !sv);
+    if (sv) c.textContent = `▶ 이어하기  ·  ${sv.depth ? `심연 ${sv.depth} · ` : ""}STAGE ${sv.stage}`;
+    $("btnStars").textContent = `✦ 꿈의 별자리 (${Meta.d.dust})`;
+    $("startWarn").classList.add("hidden"); startArmed = false;
+}
+function beginNewRun() {
+    RunSave.clear();
+    if (Meta.d.maxDepth > 0) { renderDepths(); show("depthSelect"); }
+    else startGame({ depth: 0 });
+}
+function renderDepths() {
+    const box = $("depthList"), max = Meta.d.maxDepth;
+    let html = "";
+    for (let d = 0; d <= max; d++) {
+        const info = d === 0 ? "기본 난이도" :
+            `몬스터 체력 +${Math.round(ABYSS_HP_PER_DEPTH * d * 100)}% · 피해 +${Math.round(ABYSS_DMG_PER_DEPTH * d * 100)}% · 수 +${Math.round(ABYSS_COUNT_PER_DEPTH * d)} · 꿈가루 +${Math.round(ABYSS_DUST_PER_DEPTH * d * 100)}%`;
+        html += `<button class="depth${d === max ? " big" : ""}" data-d="${d}"><b>${d === 0 ? "꿈의 문턱" : `꿈의 심연 ${d}단계`}</b><small>${info}</small></button>`;
+    }
+    box.innerHTML = html;
+    box.querySelectorAll("button.depth").forEach(b => b.onclick = () => startGame({ depth: Number(b.dataset.d) }));
+}
 
+// ---------------- 꿈의 별자리 ----------------
+let resetArmed = false;
+function renderStars() {
+    $("dustNow").textContent = Meta.d.dust;
+    const box = $("consList");
+    box.innerHTML = CONSTELLATIONS.map(c => `<div class="con" style="--c:rgb(${c.color})"><h3>${c.name}</h3>` +
+        c.nodes.map(n => {
+            const lv = Meta.level(n.id), open = Meta.unlocked(n.id), cost = Meta.cost(n.id), maxed = lv >= n.max;
+            const stars = "★".repeat(lv) + "☆".repeat(n.max - lv);
+            const btn = maxed ? `<button disabled>완성</button>` : !open ? `<button disabled>🔒 윗별 먼저</button>` :
+                `<button data-n="${n.id}" ${Meta.d.dust >= cost ? "" : "disabled"}>✦ ${cost}</button>`;
+            return `<div class="node${lv ? " lit" : ""}${open ? "" : " locked"}"><div class="st">${stars}</div><b>${n.name}</b><small>${n.eff}${n.max > 1 && !n.once ? ` (단계마다)` : ""}</small>${btn}</div>`;
+        }).join("") + `</div>`).join("");
+    box.querySelectorAll("button[data-n]").forEach(b => b.onclick = () => { if (Meta.buy(b.dataset.n)) Sound.play("powerup", { vol: 0.5 }); renderStars(); });
+    $("btnStarsReset").textContent = resetArmed ? "정말 초기화할까요? (한 번 더 누르기)" : `초기화 (쓴 꿈가루 ${Meta.d.spent} 돌려받기)`;
+}
+$("btnStars").onclick = () => { resetArmed = false; renderStars(); show("stars"); };
+$("btnStarsReset").onclick = () => {
+    if (!resetArmed) { resetArmed = true; renderStars(); return; }
+    Meta.reset(); resetArmed = false; renderStars();
+};
+
+// ---------------- 오답 노트 ----------------
+function renderNotes() {
+    const list = wrongNoteEntries();
+    const total = list.reduce((a, e) => a + e.count, 0);
+    $("notesInfo").textContent = list.length ? `틀린 문제 ${list.length}개 (모두 ${total}번 틀림) · 최근에 틀린 순서` : "아직 틀린 문제가 없어요";
+    const byId = new Map((Problems.list || []).map(p => [p.id, p]));
+    let html = "", lastDate = null;
+    for (const e of list) {
+        if (e.last !== lastDate) { html += `<div class="date">${esc(e.last || "날짜 없음")}</div>`; lastDate = e.last; }
+        const prob = byId.get(e.id);
+        const img = prob && prob._qimg ? `<img src="${prob._qimg}" alt="문제 이미지">` : "";
+        html += `<div class="note" data-id="${esc(e.id)}"><div class="q">${esc(e.question || "")}</div>${img}` +
+            `<div class="meta">${e.count}번 틀림</div>` +
+            `<div class="tries"><button class="ox" data-a="O">O</button><button class="ox" data-a="X">X</button>` +
+            `<button class="show">정답 보기</button><button class="del">지우기</button></div>` +
+            `<div class="ans hidden">정답 <b>${esc(e.correct)}</b>${e.explanation ? `<div class="exp">${esc(e.explanation)}</div>` : ""}</div></div>`;
+    }
+    $("notesList").innerHTML = html;
+    $("notesList").querySelectorAll(".note").forEach(el => {
+        const id = el.dataset.id, e = list.find(x => x.id === id), ans = el.querySelector(".ans");
+        el.querySelectorAll("button.ox").forEach(b => b.onclick = () => {
+            const ok = b.dataset.a === e.correct;
+            el.classList.remove("ok", "bad"); el.classList.add(ok ? "ok" : "bad");
+            ans.classList.remove("hidden");
+            ans.firstChild.textContent = ok ? "⭕ 맞았어요! 정답 " : "❌ 틀렸어요. 정답 ";
+            Sound.play(ok ? "correct" : "wrong", { vol: 0.5 });
+        });
+        el.querySelector("button.show").onclick = () => ans.classList.toggle("hidden");
+        el.querySelector("button.del").onclick = () => { removeWrongNote(id); renderNotes(); };
+    });
+}
+$("btnNotes").onclick = () => { renderNotes(); show("notes"); };
+
+$("btnContinue").onclick = async () => {
+    if (syncPromise) { $("btnContinue").disabled = true; await syncPromise; $("btnContinue").disabled = false; }
+    const sv = RunSave.exists();
+    if (!sv) { refreshMenu(); return; }
+    try { startGame({ save: sv }); }
+    catch (e) { RunSave.clear(); refreshMenu(); setStatus("저장된 판을 불러오지 못했어요: " + e, "err"); show("menu"); }
+};
 $("btnStart").onclick = async () => {
+    if (RunSave.exists() && !startArmed) { startArmed = true; $("startWarn").classList.remove("hidden"); return; }
     if (syncPromise) { $("btnStart").disabled = true; await syncPromise; }
-    startGame();
+    beginNewRun();
 };
 $("btnSync").onclick = () => startSync();
 $("btnRanking").onclick = () => { renderRanking(); show("ranking"); };
@@ -223,17 +332,18 @@ document.querySelectorAll("button.opt").forEach(b => b.addEventListener("click",
 function updateMusic() {
     let want = "menu";
     if (game) {
-        if (game.gameOver) want = null;
+        if (game.gameOver || game.ending) want = null;
         else want = (game.room.type === "boss" && !game.room.cleared) ? "boss" : "battle";
-    }
+    } else if (Sound.musicRate !== 1) Sound.setMusicRate(1);
     if (want !== Sound.wantMusic) Sound.playMusic(want);
-    Sound.setDuck(game && (game.quiz || game.skillPick || game.paused) ? 0.4 : 1);
+    Sound.setDuck(game && (game.modalOpen || game.paused) ? 0.4 : 1);
 }
 setInterval(updateMusic, 250);
 
 // ---------------- 시작 ----------------
 try { loadGunSettings(); } catch (e) { /* 저장된 설정이 망가졌으면 기본값 사용 */ }
 Opts.load(); renderOpts();
+Meta.load(); refreshMenu();
 Sound.init();
 Input.init(canvas);
 loadSprites();
