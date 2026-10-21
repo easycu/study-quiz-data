@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
-<link rel="stylesheet" href="style.css?v=20261020a">
+<link rel="stylesheet" href="style.css?v=20261020c">
 <title>STUDY ROGUELIKE</title>
 </head>
 <body>
@@ -48,9 +48,15 @@
 <div id="menu" class="overlay">
   <div class="panel">
     <h1>STUDY ROGUELIKE</h1>
+    <button id="btnContinue" class="big cont hidden">▶ 이어하기</button>
     <button id="btnStart" class="big">GAME START</button>
+    <p id="startWarn" class="status warn hidden">이어할 판이 있어요. 새로 시작하면 저장된 판은 지워집니다 (한 번 더 누르면 시작)</p>
     <a class="btnlink sv" href="survival.html">⚔ 서바이벌 모드 (NEW)</a>
     <button id="btnSync">문제 새로 받기</button>
+    <div class="row menu2">
+      <button id="btnStars" class="stars">✦ 꿈의 별자리</button>
+      <button id="btnNotes">📒 오답 노트</button>
+    </div>
     <button id="btnRanking">랭킹</button>
     <button id="btnSettings">설정 (화면·소리·총)</button>
     <p id="syncStatus" class="status">문제를 불러오는 중...</p>
@@ -87,17 +93,55 @@
   </div>
 </div>
 
-<!-- 게임 오버 후 이름 입력 -->
+<!-- 판 결과 (게임 오버 / 엔딩) + 랭킹 이름 -->
 <div id="nameEntry" class="overlay hidden">
-  <div class="panel">
-    <h2>게임 오버</h2>
-    <p id="finalScore"></p>
+  <div class="panel wide">
+    <h2 id="resTitle">게임 오버</h2>
+    <p id="resEnding" class="ending hidden"></p>
+    <div id="finalScore" class="resstats"></div>
+    <div id="resWrongWrap">
+      <h3 id="resWrongTitle">이번 판에 틀린 문제</h3>
+      <div id="resWrong" class="notes small"></div>
+    </div>
     <p>랭킹에 남길 이름을 입력하세요</p>
     <input id="nameInput" maxlength="12" placeholder="Player" autocomplete="off" enterkeyhint="done">
     <div class="row">
       <button id="btnNameSave">저장</button>
       <button id="btnNameSkip">건너뛰기</button>
     </div>
+  </div>
+</div>
+
+<!-- 꿈의 심연 고르기 -->
+<div id="depthSelect" class="overlay hidden">
+  <div class="panel">
+    <h2>🌙 어디서 시작할까요?</h2>
+    <p class="hint">꿈의 심연은 엔딩을 볼 때마다 한 단계씩 열려요. 깊을수록 몬스터가 강하고 꿈가루를 더 많이 줘요.</p>
+    <div id="depthList" class="depths"></div>
+    <button class="back">돌아가기</button>
+  </div>
+</div>
+
+<!-- 꿈의 별자리 -->
+<div id="stars" class="overlay hidden">
+  <div class="panel wide xwide">
+    <h2>✦ 꿈의 별자리</h2>
+    <p class="status"><b id="dustNow">0</b> 꿈가루 · 위에서부터 차례로 밝힐 수 있어요</p>
+    <div id="consList" class="cons"></div>
+    <div class="row">
+      <button id="btnStarsReset">초기화 (꿈가루 모두 돌려받기)</button>
+      <button class="back">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 오답 노트 -->
+<div id="notes" class="overlay hidden">
+  <div class="panel wide">
+    <h2>📒 오답 노트</h2>
+    <p id="notesInfo" class="status"></p>
+    <div id="notesList" class="notes scroll"></div>
+    <div class="row"><button class="back">닫기</button></div>
   </div>
 </div>
 
@@ -111,7 +155,7 @@
       <button class="opt" data-opt="music"></button>
       <button class="opt" data-opt="quality"></button>
     </div>
-    <button id="btnQuit">메인 메뉴로 (기록 안 함)</button>
+    <button id="btnQuit">메인 메뉴로 (마지막으로 깬 방까지 저장됨)</button>
   </div>
 </div>
 
@@ -125,19 +169,22 @@
 <!-- 세로 화면 안내 -->
 <div id="rotateHint" class="hidden">휴대폰을 <b>가로</b>로 돌리면 더 크게 보여요</div>
 
-<script src="js/config.js?v=20261020a"></script>
-<script src="js/data.js?v=20261020a"></script>
-<script src="js/assets_meta.js?v=20261020a"></script>
-<script src="js/world.js?v=20261020a"></script>
-<script src="js/combat.js?v=20261020a"></script>
-<script src="js/bosses.js?v=20261020a"></script>
-<script src="js/skills.js?v=20261020a"></script>
-<script src="js/gfx.js?v=20261020a"></script>
-<script src="js/audio.js?v=20261020a"></script>
-<script src="js/render.js?v=20261020a"></script>
-<script src="js/input.js?v=20261020a"></script>
-<script src="js/zoom.js?v=20261020a"></script>
-<script src="js/game.js?v=20261020a"></script>
-<script src="js/main.js?v=20261020a"></script>
+<script src="js/config.js?v=20261020c"></script>
+<script src="js/data.js?v=20261020c"></script>
+<script src="js/meta.js?v=20261020c"></script>
+<script src="js/assets_meta.js?v=20261020c"></script>
+<script src="js/world.js?v=20261020c"></script>
+<script src="js/combat.js?v=20261020c"></script>
+<script src="js/bosses.js?v=20261020c"></script>
+<script src="js/skills.js?v=20261020c"></script>
+<script src="js/cards.js?v=20261020c"></script>
+<script src="js/rooms.js?v=20261020c"></script>
+<script src="js/gfx.js?v=20261020c"></script>
+<script src="js/audio.js?v=20261020c"></script>
+<script src="js/render.js?v=20261020c"></script>
+<script src="js/input.js?v=20261020c"></script>
+<script src="js/zoom.js?v=20261020c"></script>
+<script src="js/game.js?v=20261020c"></script>
+<script src="js/main.js?v=20261020c"></script>
 </body>
 </html>

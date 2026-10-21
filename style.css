@@ -98,3 +98,67 @@ a.btnlink.sv { background: #7a3a20; border-color: #ffb070; font-weight: bold; fo
 .dmgrow b { text-align: right; }
 #svResDmg { width: min(520px, 100%); margin: 0 auto 10px; }
 .svstats { width: 100%; }
+
+/* ---- 던전: 이어하기 / 별자리 / 오답 노트 / 결과 ---- */
+button.cont { background: #2b5f8f; border-color: #8cc8ff; }
+.row.menu2 button { flex: 1 1 140px; }
+button.stars { background: #4a3470; border-color: #c8a0ff; }
+.panel.xwide { width: min(980px, 100%); }
+.cons { display: flex; gap: 10px; width: 100%; overflow-x: auto; }
+.con { flex: 1 1 0; min-width: 210px; border: 2px solid var(--c); border-radius: 12px; padding: 8px; background: rgba(255,255,255,0.03); }
+.con h3 { margin: 2px 0 8px; color: var(--c); text-align: center; font-size: 16px; }
+.node { position: relative; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "st btn" "nm btn" "ef ef"; gap: 2px 8px;
+  padding: 7px 8px; margin-bottom: 8px; border-radius: 10px; background: #23233a; border: 1px solid #44445e; }
+.node::before { content: ""; position: absolute; left: 50%; top: -9px; width: 2px; height: 9px; background: var(--c); opacity: 0.5; }
+.node:first-of-type::before { display: none; }
+.node.lit { border-color: var(--c); box-shadow: 0 0 10px -2px var(--c); }
+.node.locked { opacity: 0.5; }
+.node .st { grid-area: st; color: var(--c); letter-spacing: 1px; font-size: 13px; }
+.node b { grid-area: nm; font-size: 15px; }
+.node small { grid-area: ef; color: #b8b8d0; font-size: 12px; line-height: 1.35; }
+.node button { grid-area: btn; min-width: 70px; padding: 6px 8px; font-size: 14px; margin: 0; }
+.depths { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.depths button { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.depths small { font-size: 12px; font-weight: normal; opacity: 0.85; }
+.notes { width: 100%; text-align: left; }
+.notes.scroll { max-height: 56vh; overflow-y: auto; }
+.notes.small { max-height: 26vh; overflow-y: auto; }
+.notes .date { color: #ffd27a; font-weight: bold; margin: 10px 0 4px; font-size: 14px; }
+.note { background: #23233a; border: 1px solid #44445e; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.note.ok { border-color: #8ce6a0; } .note.bad { border-color: #ff8080; }
+.note .q { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+.note img { max-width: 100%; max-height: 220px; display: block; margin: 6px 0; border-radius: 6px; background: #fff; }
+.note .meta { color: #9a9ab8; font-size: 12px; margin-top: 2px; }
+.note .a, .note .ans { font-size: 13px; color: #c8e6ff; margin-top: 4px; line-height: 1.5; }
+.note .exp { color: #d8d8e8; margin-top: 3px; white-space: pre-wrap; }
+.note .tries { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.note .tries button { padding: 4px 12px; font-size: 14px; margin: 0; }
+.note .tries button.ox { min-width: 44px; font-weight: bold; }
+.resstats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; width: 100%; margin: 6px 0; }
+.resstats div { background: #23233a; border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; font-size: 13px; }
+.resstats span { color: #9a9ab8; font-size: 12px; } .resstats b { font-size: 15px; }
+.resstats .wide2 { grid-column: 1 / -1; }
+.ending { text-align: center; color: #e6d2ff; line-height: 1.6; }
+#resWrongWrap { width: 100%; }
+.note .tries button { width: auto; min-width: 0; flex: 0 0 auto; }
+/* 가로 휴대폰처럼 화면이 낮으면 메뉴를 두 줄(2열)로 */
+@media (max-height: 560px) {
+  #menu .panel { width: min(760px, 100%); display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; padding: 12px 16px; }
+  #menu .panel > h1, #menu .panel > .status, #menu .panel > .hint, #menu .panel > #startWarn { grid-column: 1 / -1; margin: 2px 0; }
+  #menu .panel > h1 { font-size: 24px; }
+  #menu .panel > .menu2 { display: contents; }
+  #menu button, #menu a.btnlink { min-width: 0; width: 100%; min-height: 42px; margin: 0; padding: 8px 10px; font-size: 16px; }
+  #menu button.big { font-size: 18px; }
+  #menu .hint { display: none; }
+}
+.cons, .notes, .resstats, #resWrongWrap, .depths { flex-shrink: 0; }
+@media (max-height: 560px), (max-width: 760px) {
+  .con { min-width: 0; padding: 6px; }
+  .con h3 { font-size: 14px; margin-bottom: 6px; }
+  .node { padding: 5px 6px; gap: 1px 6px; }
+  .node b { font-size: 13px; }
+  .node small { font-size: 11px; }
+  .node .st { font-size: 11px; }
+  .node button { min-width: 52px; min-height: 34px; padding: 4px 6px; font-size: 13px; }
+  .panel { padding: 12px 14px; }
+}
