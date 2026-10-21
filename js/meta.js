@@ -108,6 +108,7 @@ const RunSave = {
         for (const k of PLAYER_SAVE_FIELDS) pl[k] = p[k];
         pl.gun = p.gun ? [p.gun.element, p.gun.grade] : null;
         pl.skills = p.skills.map(s => [s.id, s.level]);
+        pl.stacks = p.cardStacks || {};
         const rooms = [...g.rooms.values()].map(r => ({
             x: r.x, y: r.y, t: r.type, c: r.cleared, v: r.visited, n: r.connections, sp: r.special || null,
             guns: r.gunChoices ? r.gunChoices.map(([gun, gx, gy]) => [gun.element, gun.grade, gx, gy]) : null, portal: r.portal || null, ep: !!r.endPortal,
@@ -126,6 +127,7 @@ const RunSave = {
         for (const k of PLAYER_SAVE_FIELDS) if (typeof s.player[k] === "number") p[k] = s.player[k];
         p.gun = s.player.gun ? new Gun(s.player.gun[0], s.player.gun[1]) : null;
         p.skills = (s.player.skills || []).filter(([id]) => SKILL_BY_ID[id]).map(([id, level]) => ({ id, level, readyAt: 0 }));
+        p.cardStacks = Object.assign({}, s.player.stacks || {});
         p._synTier = synergyTier(p);
         const rooms = new Map();
         for (const r of s.rooms) {

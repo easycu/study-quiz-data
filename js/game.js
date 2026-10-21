@@ -389,7 +389,7 @@ class Game {
         this.monsters.splice(i, 1);
         spawnDeathBurst(this.particles, m.x, m.y, EGG_COLOR, this.now, 8);
         for (let k = 0; k < 2; k++) {
-            if (this.monsters.length >= MAX_MONSTERS_PER_ROOM + 5) break;
+            if (this.monsters.length >= MONSTER_ADD_CAP + 5) break;
             const mm = spawnMinion(m.x + uniform(-12, 12), m.y + uniform(-12, 12), m.stage, m.power);
             mm.lastShotTime = this.now; mm.lastTouchTime = this.now;
             this.monsters.push(mm);
@@ -449,7 +449,7 @@ class Game {
                 if (this.hurtPlayer(scaleDmg(EXPLODER_BLAST_DMG, m.power), [255, 140, 40])) this.shake(SCREEN_SHAKE_BOSS_DASH);
             }
         }
-        if (m.subtype === "splitter" && this.monsters.length < MAX_MONSTERS_PER_ROOM + 4) {
+        if (m.subtype === "splitter" && this.monsters.length < MONSTER_ADD_CAP + 4) {
             for (let i = 0; i < 2; i++) {
                 const a = uniform(0, Math.PI * 2);
                 const cx = clamp(m.x + Math.cos(a) * 20, PLAY_LEFT + 10, PLAY_RIGHT - 10);
@@ -1121,7 +1121,8 @@ class Game {
     }
     applyCard(c) {
         const p = this.player;
-        c.apply(this);
+        c.apply(this, cardStackMult(this, c));
+        if (c.fam) p.cardStacks[c.fam] = (p.cardStacks[c.fam] || 0) + 1;
         this.stats.cards += 1;
         this.popup(p.x, p.y - p.radius - 30, c.name, c.color);
         spawnHitSparks(this.particles, p.x, p.y, CARD_RARITY[c.r][1], this.now, c.r === "legend" ? 16 : 10, true);
@@ -1223,7 +1224,7 @@ class Game {
         }
         // 클리어 시간 별 -> 골드
         const sec = Math.max(0, (now - this.roomEnterTime - ROOM_ENTER_GRACE_MS) / 1000);
-        const par = STAR_PAR_BASE_SEC + STAR_PAR_PER_MONSTER_SEC * this.roomMonsterTotal;
+        const par = STAR_PAR_BASE_SEC + STAR_PAR_PER_MONSTER_SEC * difficultyRamp(this.stage) * this.roomMonsterTotal;
         const stars = sec <= par ? 3 : sec <= par * 1.6 ? 2 : sec <= par * 2.4 ? 1 : 0;
         const gold = STAR_GOLD[stars];
         this.stats.stars += stars;

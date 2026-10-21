@@ -1305,7 +1305,9 @@ function drawCardFace(ctx, rect, c, g, now, k, extra) {
     R.text(ctx, c.icon, x + w / 2, y + 62, 32, c.color, { align: "center", bold: true });
     R.text(ctx, c.name, x + w / 2, y + 126, 19, [255, 255, 255], { align: "center", bold: true });
     const lines = wrapTextLines(ctx, cardDesc(g, c), w - 24, 14);
-    lines.slice(0, 4).forEach((l, i) => R.text(ctx, l, x + w / 2, y + 158 + i * 21, 14, [220, 220, 232], { align: "center" }));
+    lines.slice(0, 3).forEach((l, i) => R.text(ctx, l, x + w / 2, y + 158 + i * 21, 14, [220, 220, 232], { align: "center" }));
+    const note = c.id && CARD_BY_ID[c.id] === c ? cardStackNote(g, c) : "";
+    if (note) R.text(ctx, `↓ ${note}`, x + w / 2, y + 158 + Math.min(3, lines.length) * 21 + 2, 12, [255, 170, 110], { align: "center", bold: true });
     if (extra) extra(x, y, w, h);
     ctx.restore();
 }

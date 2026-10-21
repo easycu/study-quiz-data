@@ -8,8 +8,9 @@ function monsterCountRange(stage) {
     const extra = Math.floor((stage - 1) / MONSTER_COUNT_STAGE_STEP);
     let lo = Math.min(MIN_MONSTERS_PER_ROOM + extra, MONSTER_COUNT_MIN_CAP);
     let hi = Math.min(MAX_MONSTERS_PER_ROOM + extra, MONSTER_COUNT_MAX_CAP);
-    lo = Math.max(1, pyRound(lo * MONSTER_COUNT_MULT)) + RunMods.countAdd;
-    hi = Math.max(lo, pyRound(hi * MONSTER_COUNT_MULT) + RunMods.countAdd);
+    const mult = MONSTER_COUNT_MULT * difficultyRamp(stage);
+    lo = Math.max(1, pyRound(lo * mult)) + RunMods.countAdd;
+    hi = Math.max(lo, pyRound(hi * mult) + RunMods.countAdd);
     return [lo, hi];
 }
 
@@ -103,6 +104,7 @@ class Player {
         this.invulnBonus = 0;
         this.clearHeal = 0;                        // 방 클리어 회복 (최대 체력 비율)
         this._synTier = 0;
+        this.cardStacks = {};                      // 종류별로 고른 카드 수 (겹칠수록 효과 감소)
     }
 }
 function critChance(p) { return CRIT_CHANCE + (p ? p.critBonus : 0); }
@@ -190,7 +192,7 @@ class Monster {
                 default: this.hp = scaleHp(RANGED_BASE_HP, P); this.speed = 1.6; this.color = [165, 70, 225]; this.shootCooldown = 1400; this.bulletDamage = scaleDmg(RANGED_SINGLE_BULLET_DMG, P);
             }
         }
-        this.hp = Math.max(1, pyRound(this.hp * MONSTER_HP_MULT));
+        this.hp = Math.max(1, pyRound(this.hp * MONSTER_HP_MULT * difficultyRamp(this.stage)));
         if (this.isElite) {
             this.radius = pyRound(this.radius * ELITE_RADIUS_MULT);
             this.hp = Math.max(1, pyRound(this.hp * ELITE_HP_MULT));
@@ -237,7 +239,7 @@ class Boss extends Monster {
         this.parts = this.variant === "hybrid" ? pickHybridParts(this.stage) : [this.variant];
         const defs = this.parts.map(v => BOSS_DEFS[v]);
         const hpMult = Math.max(...defs.map(d => d.hpMult || 1)) * (this.variant === "hybrid" ? 1.15 : 1);
-        this.hp = pyRound(scaleHp(BOSS_BASE_HP, this.power) * hpMult * BOSS_HP_EXTRA);
+        this.hp = pyRound(scaleHp(BOSS_BASE_HP, this.power) * hpMult * BOSS_HP_EXTRA * difficultyRamp(this.stage));
         this.maxHp = this.hp;
         this.radius = BOSS_RADIUS;
         this.speed = scaleMonsterSpeed(1.3 * (defs[0].speed || 1), this.power);
@@ -991,7 +993,7 @@ function spawnNear(m, monsters, now, dist) {
 function updateSummonerMonster(m, p, monsters, now, canAttack) {
     keepDistance(m, p, 240);
     if (canAttack && m.summonCount < SUMMONER_MAX_SUMMONS && now >= m.nextSummonTime) {
-        if (monsters.length < MAX_MONSTERS_PER_ROOM + 3) { spawnNear(m, monsters, now, 24); m.summonCount++; }
+        if (monsters.length < MONSTER_ADD_CAP + 3) { spawnNear(m, monsters, now, 24); m.summonCount++; }
         m.nextSummonTime = now + SUMMONER_SUMMON_COOLDOWN_MS;
     }
 }

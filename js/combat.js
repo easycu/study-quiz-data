@@ -277,7 +277,7 @@ function updateShaman(g, m, aim, now, canAttack) {
     // 1) 근처에서 막 죽은 몬스터를 한 번 부활
     if (!m.reviveUsed) {
         const dead = g.recentDeaths.find(dd => now - dd.time <= SHAMAN_REVIVE_WINDOW_MS && hypot(dd.x - m.x, dd.y - m.y) <= SHAMAN_RANGE * 1.4);
-        if (dead && g.monsters.length < MAX_MONSTERS_PER_ROOM + 4) {
+        if (dead && g.monsters.length < MONSTER_ADD_CAP + 4) {
             g.recentDeaths.splice(g.recentDeaths.indexOf(dead), 1);
             const r = new Monster(dead.x, dead.y, dead.type, dead.stage, dead.subtype, false, dead.power);
             r.hp = Math.max(1, pyRound(r.hp * 0.5)); r.revived = true;
@@ -385,7 +385,7 @@ function eliteDeathEffects(g, m, now) {
             },
         }));
     }
-    if (m.hasAffix("splitting") && g.monsters.length < MAX_MONSTERS_PER_ROOM + 4) {
+    if (m.hasAffix("splitting") && g.monsters.length < MONSTER_ADD_CAP + 4) {
         for (let i = 0; i < 2; i++) {
             const a = uniform(0, Math.PI * 2);
             const c = new Monster(clamp(m.x + Math.cos(a) * 22, PLAY_LEFT + 12, PLAY_RIGHT - 12), clamp(m.y + Math.sin(a) * 22, PLAY_TOP + 12, PLAY_BOTTOM - 12),

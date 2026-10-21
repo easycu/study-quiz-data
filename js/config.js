@@ -16,10 +16,16 @@ const MAX_SCORE_ENTRIES = 50;
 const QUESTIONS_PER_ROOM = 1;          // 방 하나 = 문제 하나 (빠른 전개)
 
 const MIN_MONSTERS_PER_ROOM = 4, MAX_MONSTERS_PER_ROOM = 8;
+const MONSTER_ADD_CAP = 16;         // 소환·분열로 늘어날 수 있는 기준 (몬스터 수 2배에 맞춤)
 const MONSTER_COUNT_STAGE_STEP = 3, MONSTER_COUNT_MIN_CAP = 7, MONSTER_COUNT_MAX_CAP = 12;
-const MONSTER_COUNT_MULT = 0.7;
-const MONSTER_HP_MULT = 1.35;       // 강화 카드로 빨리 강해지는 만큼 (예전 1.1)
-const BOSS_HP_EXTRA = 1.4;          // 보스도 같은 이유로
+const MONSTER_COUNT_MULT = 0.7;          // 기본 배율 (여기에 스테이지별 난이도 배율을 곱함)
+const MONSTER_HP_MULT = 1.35;       // 기본 배율 (여기에 스테이지별 난이도 배율을 곱함)
+const BOSS_HP_EXTRA = 1.4;          // 보스 기본 배율
+// 스테이지별 난이도 배율 (몬스터 수 / 체력): 1~2스테이지 1.5배 -> 10스테이지 2.5배까지 점점
+const RAMP_START = 1.5, RAMP_END = 2.5;
+function difficultyRamp(stage) { return clamp(RAMP_START + (RAMP_END - RAMP_START) * ((stage || 1) - 2) / (FINAL_STAGE - 2), RAMP_START, RAMP_END); }
+// 같은 종류 카드를 겹칠 때마다 효과 x0.94
+const CARD_STACK_DECAY = 0.94;
 const MIN_MONSTER_SPAWN_DIST = 190, MONSTER_SPAWN_MAX_TRIES = 30;
 
 const ELITE_SPAWN_CHANCE = 0.15, ELITE_HP_MULT = 1.8, ELITE_DMG_MULT = 1.4, ELITE_RADIUS_MULT = 1.25, ELITE_KILL_HEAL = 10;
@@ -273,7 +279,7 @@ const CORRECT_HEAL_RATIO = 0.10;                 // 정답: 잃은 체력의 10%
 // ---- 방 클리어 연출 / 별 / 골드 ----
 const CLEAR_SLOWMO_FRAMES = 24;                  // 마지막 처치 슬로모션 (화면 기준 0.4초, 게임 시간은 1/3)
 const CLEAR_TO_QUIZ_MS = 650;                    // 클리어 후 문제가 뜨기까지
-const STAR_PAR_BASE_SEC = 5, STAR_PAR_PER_MONSTER_SEC = 1.4;   // 별 3개 기준 시간 = 5초 + 몬스터당 1.4초
+const STAR_PAR_BASE_SEC = 5, STAR_PAR_PER_MONSTER_SEC = 1.2;   // 별 3개 기준 시간 = 5초 + 몬스터당 1.2초 x 스테이지 난이도 배율
 const STAR_GOLD = [2, 5, 8, 12];                 // 별 0~3개 골드
 const ELITE_GOLD = 4;
 // ---- 2웨이브 ----
