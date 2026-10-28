@@ -52,7 +52,7 @@ class Game {
         this.wave = 1; this.wave2 = 0; this.waveSpawnAt = 0; this.wavePts = null; this.roomMonsterTotal = 0;
         this.banner = null;         // 화면 위쪽 알림 {text, sub, color, t0, until}
         this.ending = false;
-        applyMetaToPlayer(this);
+        applyMetaToPlayer(this, opts.stone || (opts.save && opts.save.stone));
         this.player._synTier = synergyTier(this.player);
         if (opts.save) {
             RunSave.restore(this, opts.save);
@@ -64,7 +64,7 @@ class Game {
     }
     // 화면 위 알림
     say(text, color, ms, sub) { this.banner = { text, sub: sub || "", color: color || [255, 230, 120], t0: this.now, until: this.now + (ms || 1400) }; }
-    addGold(v) { this.gold += v; }
+    addGold(v) { this.gold += Math.round(v * (RunMods.goldMult || 1)); }
     queueFront(fn) { this.queue.unshift(fn); }
     get modalOpen() { return !!(this.quiz || this.skillPick || this.cardPick); }
     stageIntro() {
@@ -113,6 +113,7 @@ class Game {
     // ---------------- 방 입장 ----------------
     loadRoom(coord, restoring) {
         this.collectAllDrops();
+        if (this.player) this.player.dash = null;
         this.wave = 1; this.wave2 = 0; this.waveSpawnAt = 0; this.wavePts = null;
         // 지난 방에서 잠깐 세운 바위는 없앤다
         const prev = this.rooms.get(ck(this.currentCoord[0], this.currentCoord[1]));
@@ -225,9 +226,11 @@ class Game {
     // 플레이어가 피해를 받는다 (무적 / 피해 감소 / 보호막 처리). 실제로 맞았으면 true
     hurtPlayer(dmg, color, source) {
         const p = this.player, now = this.now;
+        if (dmg > 0 && !this.gameOver && now < p.dashInvulnUntil) { dashPerfect(this); return false; }      // 대시 무적 중: 완벽 회피
         if (now < p.invulnUntil || dmg <= 0 || this.gameOver) return false;
         let d = dmg;
         if (now < p.dmgReduceUntil) d *= (1 - p.dmgReduce);
+        if (p.armor) d *= Math.max(0.4, 1 - p.armor);                       // 철갑
         if (p.shield > 0 && now < p.shieldUntil) {
             const a = Math.min(p.shield, d);
             p.shield -= a; d -= a;
@@ -272,6 +275,7 @@ class Game {
         const pl = this.player;
         if (pl.bigDmg && (m.isElite || m.isBoss)) dmg *= 1 + pl.bigDmg;                 // 거인 사냥꾼 / 사냥꾼의 별
         if (pl.execute && m.hp < m.maxHp * 0.3) dmg *= 1 + pl.execute;                  // 처형자
+        if (pl.bossDmg && m.isBoss) dmg *= 1 + pl.bossDmg;                              // 보스 킬러
         let d = dmg;
         if (m.isBoss && m.bstate === "rest") d *= BOSS_REST_DAMAGE_MULT;
         if (m.shield > 0 && now < m.shieldUntil) {
@@ -303,7 +307,7 @@ class Game {
     sd(s, coef) {
         const def = SKILL_BY_ID[s.id];
         return playerShotDamage(this.player) * coef * skillLevelMult(s.level) *
-            (skillHasSynergy(def, this.player.gun) ? SKILL_SYNERGY_MULT : 1) * (this._castBoost || 1);
+            (skillHasSynergy(def, this.player.gun) ? SKILL_SYNERGY_MULT + (this.player.synBonus || 0) : 1) * (this._castBoost || 1) * (1 + (this.player.skillDmg || 0));
     }
     skillHit(s, m, dmg, o) {
         const crit = Math.random() < critChance(this.player);
@@ -432,6 +436,7 @@ class Game {
             this.dropDust(m.x, m.y, randInt(DUST_ELITE[0], DUST_ELITE[1]));
             this.dropGold(m.x, m.y, ELITE_GOLD);
             this.bonusPicks += 1;
+            if (p.eliteHeal) this.healPlayer(p.maxHp * p.eliteHeal);
             this.popup(m.x, m.y - m.radius - 40, this.bonusPicks > 1 ? "전리품 등급 UP!" : "전리품 상자!", [255, 215, 90]);
         } else if (!m.isMinion && Math.random() < DUST_NORMAL_CHANCE) this.dropDust(m.x, m.y, 1);
         if (p.lifesteal > 0) this.healPlayer(p.lifesteal);
@@ -529,10 +534,12 @@ class Game {
         let obstacles = room.obstacles || [];
         const canAttack = (now - this.roomEnterTime) >= ROOM_ENTER_GRACE_MS;
 
-        // ---- 플레이어 이동 (키보드 / 조이패드) ----
+        // ---- 플레이어 이동 (키보드 / 조이패드 / 대시) ----
         const [mx, my] = Input.moveVector();
-        p.isMoving = mx !== 0 || my !== 0;
-        if (p.isMoving) {
+        const dashing = dashUpdate(this, now);
+        p.isMoving = dashing || mx !== 0 || my !== 0;
+        if (dashing) { /* 대시 중에는 대시 방향으로만 */ }
+        else if (p.isMoving) {
             const len = hypot(mx, my);
             const spd = p.speed * (now < p.slowUntil ? 1 - p.slowPct : 1);
             p.x += mx * spd; p.y += my * spd;
@@ -598,6 +605,12 @@ class Game {
                     if (Opts.high) this.particles.push(new FxParticle({ img: "muzzle_02", x: p.x + tdx / td * 18, y: p.y + tdy / td * 18, color: p.gun ? ELEMENT_FX_COLOR[p.gun.element] : [255, 230, 150],
                         size: 22, life: 90, t0: now, rot: Math.atan2(tdy, tdx) + Math.PI / 2 }));
                     if (p.empower) { shots[0].empower = p.empower; shots[0].radius += 2; p.empower = null; }
+                    if (p.dashEmpower && p.dashEmpower.shots > 0) {        // 그림자 걸음: 다음 3발 강화
+                        for (const b of shots) { b.damage *= 1 + p.dashEmpower.mult; b.radius += 2; b.shadow = true; }
+                        if (--p.dashEmpower.shots <= 0) p.dashEmpower = null;
+                    }
+                    if (p.nextCrit) { shots[0].forceCrit = p.nextCrit; p.nextCrit = 0; }   // 반격의 기술: 치명타 확정
+                    if (p.elemBurst && ++p._shotCount % 3 === 0) { shots[0].burst = true; shots[0].radius += 2; }   // 원소 폭발 (사수 끝별)
                     this.bullets.push(...shots);
                     if (now < p.volleyUntil) {
                         for (const deg of [-14, 14, 0]) {
@@ -611,6 +624,8 @@ class Game {
             }
         }
 
+        // ---- 재생 (수호 별자리) ----
+        if (p.regenPct && inBattle && p.hp > 0 && p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * p.regenPct / 60);
         // ---- 2웨이브 등장 ----
         if (this.waveSpawnAt && now >= this.waveSpawnAt) this.spawnWave2(now);
         // ---- 꿈가루 / 골드 ----
@@ -769,8 +784,8 @@ class Game {
                     if (!m.targetable || hypot(b.x - m.x, b.y - m.y) >= m.radius + b.radius) continue;
                     const gun = b.gun;
                     let damage = b.damage * lightDamageMultiplier(gun, m);
-                    const crit = Math.random() < critChance(p);
-                    if (crit) damage *= critMult(p);
+                    const crit = !!b.forceCrit || Math.random() < critChance(p);
+                    if (crit) damage *= critMult(p) + (b.forceCrit || 0);
                     const res = this.hitMonster(m, damage, { crit, knock: [b.dirX, b.dirY], noKill: true });
                     if (res.dealt > 0) {
                         spawnHitSparks(this.particles, b.x, b.y, gun ? ELEMENT_FX_COLOR[gun.element] : [255, 230, 150], now, crit ? 6 : 3, crit);
@@ -806,7 +821,13 @@ class Game {
                             this.slowMonster(m, 0.3, 2000);
                         }
                     }
-                    if (m.hp <= 0 && this.monsters.includes(m)) this.killMonster(m);
+                    // 폭발탄: 맞힌 자리 주변 적에게 피해
+                    if (eff.blast) this.gunBlast(m, eff.blast);
+                    if (b.burst) this.gunBlast(m, damage * 0.6);
+                    if (m.hp <= 0 && this.monsters.includes(m)) {
+                        this.killMonster(m);
+                        if (gun && gun.element === "dark") this.soulBlast(m, m.maxHp * gun.effectValue, 0);
+                    }
                     break;
                 }
             } else if (hypot(b.x - p.x, b.y - p.y) < p.radius + b.radius) {
@@ -922,9 +943,9 @@ class Game {
             SKILL_CAST[s.id](this, s, t);
             Sound.play("sk_" + def.el, { vol: 0.42, gap: 80 });
             this._castBoost = 0;
-            s.readyAt = now + skillCooldownMs(def, s.level) * SYNERGY_CD_MULT[p._synTier || 0];
+            s.readyAt = now + skillCooldownMs(def, s.level) * SYNERGY_CD_MULT[p._synTier || 0] * Math.max(0.5, 1 - (p.skillCd || 0));
             s.castAt = now;
-            p.nextSkillAt = now + SKILL_CAST_GAP_MS;
+            p.nextSkillAt = now + SKILL_CAST_GAP_MS - (p.castGapCut || 0);
             break;
         }
     }
@@ -1068,33 +1089,41 @@ class Game {
     }
 
     finishQuiz() {
-        const q = this.quiz, ok = q.correct >= 1;
+        const q = this.quiz, ok = q.correct >= 1, review = !!(q.flags && q.flags[0]);
         this.quiz = null;
         Input.releaseJoystick();
-        this.afterQuiz(ok);
+        this.afterQuiz(ok, review);
     }
     // 문제 결과 -> 회복/패널티 -> 강화 카드 -> 엘리트 전리품
-    afterQuiz(ok) {
+    afterQuiz(ok, review) {
         const p = this.player;
+        if (ok && review && Meta.bonus("reviewDust") > 0) {      // 복습의 보람
+            const v = Meta.bonus("reviewDust");
+            Meta.addDust(v); this.stats.dust += v;
+            this.popup(p.x, p.y - p.radius - 44, `복습 보너스 ✦${v}`, [210, 170, 255]);
+        }
         if (ok) {
-            const heal = Math.max(0, p.maxHp - p.hp) * CORRECT_HEAL_RATIO;
+            const heal = Math.max(0, p.maxHp - p.hp) * (CORRECT_HEAL_RATIO + Meta.bonus("correctHeal"));
             if (heal > 0.5) { p.hp = Math.min(p.maxHp, p.hp + heal); this.popup(p.x, p.y - p.radius - 26, `정답 +${fmtNum(heal)}`, [120, 255, 140]); }
         } else {
-            const pen = Math.max(0, p.hp) * WRONG_ANSWER_DAMAGE_RATIO;
+            const pen = Math.max(0, p.hp) * WRONG_ANSWER_DAMAGE_RATIO * Math.max(0, 1 - Meta.bonus("wrongSoft"));
             if (pen > 0) { p.hp = Math.max(1, p.hp - pen); this.popup(p.x, p.y - p.radius - 10, `오답 -${fmtNum(pen)}`, [255, 110, 110]); }
         }
-        const need = Meta.bonus("focus") > 0 ? STREAK_FOR_EXTRA_CARD - 1 : STREAK_FOR_EXTRA_CARD;
+        const rules = streakRules(p), need = rules.extraAt;
         const st = this.streak;
         let o;
-        if (!ok) o = { n: CARDS_ON_WRONG, title: "오답...  2장 중에서 고르세요", color: [255, 150, 140] };
+        const wrongN = Meta.bonus("wrongCards") > 0 ? 3 : CARDS_ON_WRONG;
+        if (!ok) o = { n: wrongN, title: `오답...  ${wrongN}장 중에서 고르세요`, color: [255, 150, 140] };
         else {
-            const guarantee = st > 0 && st % STREAK_LEGEND_EVERY === 0 ? "legend" : st > 0 && st % STREAK_RARE_EVERY === 0 ? "rare" : null;
+            const guarantee = st > 0 && st % rules.legendEvery === 0 ? "legend" : st > 0 && st % rules.rareEvery === 0 ? "rare" : null;
             o = { n: st >= need ? CARDS_ON_STREAK : CARDS_ON_CORRECT, guarantee, color: [150, 255, 170],
                   title: st >= need ? `연속 정답 ${st}!  강화를 고르세요 (+1장)` : "정답!  강화를 하나 고르세요",
                   sub: guarantee === "legend" ? `🔥 ${st}연속 정답 보상: 전설 카드 확정!` : guarantee === "rare" ? `✨ ${st}연속 정답 보상: 희귀 카드 확정!` : "" };
             if (guarantee) Sound.play("powerup", { vol: 0.5, rate: guarantee === "legend" ? 1.25 : 1.1 });
         }
         this.queue.push(g => g.openCardPick(o));
+        if (ok && st > 0 && st % 10 === 0 && Meta.bonus("sage") > 0)       // 지식의 정점
+            this.queue.push(g => g.openCardPick({ n: 3, min: "rare", guarantee: "legend", title: `지식의 정점! 연속 정답 ${st}`, color: [255, 215, 100], sub: "전설 카드를 한 번 더 고르세요" }));
         this.queueEliteLoot();
         this.wantSave = true;
     }
@@ -1104,7 +1133,7 @@ class Game {
         const n = this.bonusPicks;
         this.bonusPicks = 0;
         if (n <= 0) return;
-        const boost = Math.min(3, 1.4 + 0.6 * (n - 1));
+        const boost = Math.min(3.5, 1.4 + 0.6 * (n - 1) + Meta.bonus("lootBoost"));
         this.queue.push(g => g.openCardPick({ n: 2, boost, title: "엘리트 전리품 상자", color: [255, 215, 90],
             sub: n > 1 ? `엘리트 ${n}마리 처치 · 희귀 확률 x${boost.toFixed(1)}` : "엘리트를 처치한 보상" }));
     }
@@ -1219,6 +1248,8 @@ class Game {
             } else [room.gunChoices, room.portal] = placeBossRewards(rollGunChoices(), room.obstacles, p.x, p.y);
             room.rewardActiveAt = now + REWARD_PICKUP_DELAY_MS;
             this.queueEliteLoot();
+            if (Meta.bonus("bossLegend") > 0)          // 왕의 전리품 (사냥 끝별)
+                this.queue.push(g => g.openCardPick({ n: 3, min: "rare", guarantee: "legend", title: "왕의 전리품", color: [255, 175, 50], sub: "보스를 쓰러뜨린 보상" }));
             this.wantSave = true;
             return;
         }
@@ -1226,7 +1257,7 @@ class Game {
         const sec = Math.max(0, (now - this.roomEnterTime - ROOM_ENTER_GRACE_MS) / 1000);
         const par = STAR_PAR_BASE_SEC + STAR_PAR_PER_MONSTER_SEC * difficultyRamp(this.stage) * this.roomMonsterTotal;
         const stars = sec <= par ? 3 : sec <= par * 1.6 ? 2 : sec <= par * 2.4 ? 1 : 0;
-        const gold = STAR_GOLD[stars];
+        const gold = Math.round(STAR_GOLD[stars] * (1 + Meta.bonus("starGold")));
         this.stats.stars += stars;
         this.dropGold(p.x, p.y - 40, gold);
         this.clearInfo = { stars, sec, gold, t0: now };
@@ -1259,6 +1290,40 @@ class Game {
         this.say("꿈에서 깨어났다", [220, 200, 255], 3000, depth ? `꿈의 심연 ${depth}단계 돌파!` : "모든 스테이지 클리어!");
         Sound.playMusic(null); Sound.play("stage", { vol: 0.8 });
         Input.releaseJoystick();
+    }
+
+    // =============================================================
+    // 총 특수 효과: 영혼 폭발(어둠) / 폭발탄
+    // =============================================================
+    gunBlast(m, dmg) {
+        const x = m.x, y = m.y;
+        this.addFx({ kind: "anim", sheet: "explosion", x, y, scale: BLAST_RADIUS / 22, dur: 360, alpha: 0.85 });
+        spawnHitSparks(this.particles, x, y, [255, 180, 80], this.now, 3);
+        Sound.play("explode2", { vol: 0.28, gap: 70 });
+        for (const o of this.monsters.slice()) {
+            if (o === m || !o.targetable || hypot(o.x - x, o.y - y) > BLAST_RADIUS + o.radius) continue;
+            this.damageByEffect(o, dmg, [255, 180, 80]);
+        }
+    }
+    // 처치한 적이 터지며 주변에 피해. 그 폭발로 죽은 적도 다시 터진다 (연쇄, 갈수록 약하게)
+    soulBlast(dead, dmg, depth) {
+        const x = dead.x, y = dead.y, now = this.now;
+        const r = SOUL_BLAST_RADIUS * (depth ? 0.85 : 1);
+        this.addFx({ kind: "anim", sheet: "spirit", x, y, scale: r / 20, dur: 420, alpha: 0.9 });
+        this.addFx({ kind: "circle", x, y, r, color: [170, 90, 240], dur: 320 });
+        spawnHitSparks(this.particles, x, y, [190, 110, 255], now, depth ? 4 : 7, true);
+        Sound.play("sk_dark", { vol: 0.35, gap: 60, rate: 1 + depth * 0.15 });
+        if (depth) this.shake(2 + depth);
+        const cap = playerShotDamage(this.player) * SOUL_BOSS_CAP_SHOTS;
+        for (const o of this.monsters.slice()) {
+            if (!o.targetable || hypot(o.x - x, o.y - y) > r + o.radius) continue;
+            const d = o.isBoss ? Math.min(dmg, cap) : dmg;
+            const res = this.hitMonster(o, d, { color: [200, 130, 255], popupDy: 18, noKill: true });
+            if (res.killed && this.monsters.includes(o)) {
+                this.killMonster(o);
+                if (depth + 1 < SOUL_CHAIN_MAX) { const v = dmg / Math.max(1, dead.maxHp) * SOUL_CHAIN_DECAY; this.addTimer(90, gg => gg.soulBlast(o, o.maxHp * v, depth + 1)); }
+            }
+        }
     }
 
     // =============================================================
@@ -1327,7 +1392,7 @@ class Game {
             if (owned) {
                 owned.level = Math.min(SKILL_MAX_LEVEL, owned.level + 1);
                 this.popup(p.x, p.y - 44, `${def.name} +${owned.level} 강화!`, skillElementColor(def.el));
-            } else if (p.skills.length < SKILL_SLOTS) {
+            } else if (p.skills.length < playerSkillSlots(p)) {
                 p.skills.push({ id, level: 0, readyAt: 0 });
                 this.popup(p.x, p.y - 44, `${def.name} 획득!`, skillElementColor(def.el));
             } else {
@@ -1354,6 +1419,10 @@ class Game {
         Input.releaseJoystick();
         ZoomView.open(src, () => { if (this.quiz) this.quiz.phaseChangedAt = this.now; });
     }
+
+    // 대시 버튼 (휴대폰) / 대시
+    dashHit(x, y) { return !this.modalOpen && !this.paused && hypot(x - DASH_BTN.x, y - DASH_BTN.y) <= DASH_BTN.r + 14; }
+    onDash() { if (!this.gameOver && !this.ending) dashStart(this); }
 
     // 터치/클릭 (게임 좌표)
     onTap(x, y) {
@@ -1393,6 +1462,7 @@ class Game {
         if (code === "Escape" && this.cardPick && this.cardPick.mode !== "pick" && !this.paused) { this.closeCardPick(); return; }
         if (code === "Escape" || code === "KeyP") { if (!this.gameOver) this.setPaused(!this.paused); return; }
         if (this.paused) return;
+        if ((code === "Space" || code === "ShiftLeft" || code === "ShiftRight") && !this.modalOpen) { this.onDash(); return; }
         const enter = code === "Enter" || code === "NumpadEnter" || code === "Space";
         const cp = this.cardPick;
         if (cp) {

@@ -58,6 +58,11 @@ const Input = {
             h.onTap(gx, gy, this.lastType);
             return;
         }
+        // 대시 버튼 (조이패드를 쓰는 중에도 다른 손가락으로 누를 수 있음)
+        if (h && h.dashHit) {
+            const [gx, gy] = this.toGame(e.clientX, e.clientY);
+            if (h.dashHit(gx, gy)) { h.onDash(); return; }
+        }
         if (this.joy) return;     // 이미 다른 손가락이 조이패드를 쓰는 중
         const [cx, cy] = this._client(e);
         this.joy = { id: e.pointerId, baseX: cx, baseY: cy, x: cx, y: cy };
@@ -77,7 +82,7 @@ const Input = {
     _keyDown(e) {
         const tag = (e.target && e.target.tagName) || "";
         if (tag === "INPUT" || tag === "TEXTAREA") return;   // 이름 입력칸 등에서는 게임 키로 쓰지 않음
-        const gameKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Enter", "NumpadEnter"];
+        const gameKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Enter", "NumpadEnter", "ShiftLeft", "ShiftRight"];
         if (gameKeys.includes(e.code)) e.preventDefault();   // 화면 스크롤 방지
         this.lastType = "keyboard";
         this.keys.add(e.code);

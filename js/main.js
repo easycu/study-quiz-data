@@ -63,7 +63,7 @@ function draw() {
 }
 
 // ---------------- 화면 전환 ----------------
-const OVERLAYS = ["menu", "ranking", "settings", "nameEntry", "pause", "depthSelect", "stars", "notes"];
+const OVERLAYS = ["menu", "ranking", "settings", "nameEntry", "pause", "depthSelect", "stars", "notes", "stoneSelect"];
 function show(id) {
     for (const o of OVERLAYS) $(o).classList.toggle("hidden", o !== id);
     $("pauseBtn").classList.toggle("hidden", !(game && id === null));
@@ -160,10 +160,23 @@ function refreshMenu() {
     $("btnStars").textContent = `✦ 꿈의 별자리 (${Meta.d.dust})`;
     $("startWarn").classList.add("hidden"); startArmed = false;
 }
+let pendingDepth = 0;
 function beginNewRun() {
     RunSave.clear();
     if (Meta.d.maxDepth > 0) { renderDepths(); show("depthSelect"); }
-    else startGame({ depth: 0 });
+    else chooseStone(0);
+}
+// 수호석 고르기 -> 시작
+function chooseStone(depth) {
+    pendingDepth = depth;
+    const box = $("stoneList");
+    box.innerHTML = STONES.map(st => {
+        const ok = Meta.stoneOk(st.id), cur = Meta.d.stone === st.id;
+        return `<button class="stone${ok ? "" : " locked"}${cur ? " cur" : ""}" data-s="${st.id}" ${ok ? "" : "disabled"} style="--c:rgb(${st.color})">` +
+            `<span class="si">${st.icon}</span><b>${st.name}</b><small>${ok ? st.eff : "🔒 " + st.lock}</small></button>`;
+    }).join("");
+    box.querySelectorAll("button.stone").forEach(b => b.onclick = () => { Meta.setStone(b.dataset.s); startGame({ depth: pendingDepth, stone: b.dataset.s }); });
+    show("stoneSelect");
 }
 function renderDepths() {
     const box = $("depthList"), max = Meta.d.maxDepth;
@@ -174,26 +187,59 @@ function renderDepths() {
         html += `<button class="depth${d === max ? " big" : ""}" data-d="${d}"><b>${d === 0 ? "꿈의 문턱" : `꿈의 심연 ${d}단계`}</b><small>${info}</small></button>`;
     }
     box.innerHTML = html;
-    box.querySelectorAll("button.depth").forEach(b => b.onclick = () => startGame({ depth: Number(b.dataset.d) }));
+    box.querySelectorAll("button.depth").forEach(b => b.onclick = () => chooseStone(Number(b.dataset.d)));
 }
 
-// ---------------- 꿈의 별자리 ----------------
-let resetArmed = false;
+// ---------------- 꿈의 별자리 (별 지도) ----------------
+let resetArmed = false, starTab = 0, starSel = null;
 function renderStars() {
     $("dustNow").textContent = Meta.d.dust;
-    const box = $("consList");
-    box.innerHTML = CONSTELLATIONS.map(c => `<div class="con" style="--c:rgb(${c.color})"><h3>${c.name}</h3>` +
-        c.nodes.map(n => {
-            const lv = Meta.level(n.id), open = Meta.unlocked(n.id), cost = Meta.cost(n.id), maxed = lv >= n.max;
-            const stars = "★".repeat(lv) + "☆".repeat(n.max - lv);
-            const btn = maxed ? `<button disabled>완성</button>` : !open ? `<button disabled>🔒 윗별 먼저</button>` :
-                `<button data-n="${n.id}" ${Meta.d.dust >= cost ? "" : "disabled"}>✦ ${cost}</button>`;
-            return `<div class="node${lv ? " lit" : ""}${open ? "" : " locked"}"><div class="st">${stars}</div><b>${n.name}</b><small>${n.eff}${n.max > 1 && !n.once ? ` (단계마다)` : ""}</small>${btn}</div>`;
-        }).join("") + `</div>`).join("");
-    box.querySelectorAll("button[data-n]").forEach(b => b.onclick = () => { if (Meta.buy(b.dataset.n)) Sound.play("powerup", { vol: 0.5 }); renderStars(); });
+    const cons = CONSTELLATIONS[starTab];
+    $("consTabs").innerHTML = CONSTELLATIONS.map((c, i) => {
+        const lit = c.nodes.filter(n => Meta.level(n.id) > 0).length;
+        return `<button class="ctab${i === starTab ? " on" : ""}" data-i="${i}" style="--c:rgb(${c.color})">${c.icon} ${c.name}<small>${lit}/${c.nodes.length}</small></button>`;
+    }).join("");
+    $("consTabs").querySelectorAll("button.ctab").forEach(b => b.onclick = () => { starTab = Number(b.dataset.i); starSel = null; renderStars(); });
+    // 별 지도: 선 -> 별
+    const col = `rgb(${cons.color})`;
+    let svg = `<defs><radialGradient id="sky" cx="50%" cy="40%" r="70%"><stop offset="0" stop-color="#262046"/><stop offset="1" stop-color="#0b0b18"/></radialGradient></defs>`;
+    svg += `<rect x="0" y="0" width="100" height="100" fill="url(#sky)" rx="3"/>`;
+    for (let k = 0; k < 40; k++) { const x = (k * 37.3) % 100, y = (k * 61.7) % 100; svg += `<circle cx="${x}" cy="${y}" r="${0.15 + (k % 3) * 0.12}" fill="#fff" opacity="${0.15 + (k % 4) * 0.1}"/>`; }
+    for (const n of cons.nodes) for (const pid of n.parents) {
+        const pn = NODE_BY_ID[pid], on = Meta.level(pid) > 0 && Meta.level(n.id) > 0, near = Meta.level(pid) > 0;
+        svg += `<line x1="${pn.x}" y1="${pn.y}" x2="${n.x}" y2="${n.y}" stroke="${on ? col : near ? "#8a86b0" : "#3b3a55"}" stroke-width="${on ? 0.9 : 0.5}" ${on ? "" : 'stroke-dasharray="1.5 1.2"'}/>`;
+    }
+    for (const n of cons.nodes) {
+        const lv = Meta.level(n.id), open = Meta.unlocked(n.id), sel = starSel === n.id;
+        const r = n.cap ? 4.4 : 3.2;
+        if (lv > 0) svg += `<circle cx="${n.x}" cy="${n.y}" r="${r * 2.2}" fill="${col}" opacity="0.18"/>`;
+        svg += `<g class="star" data-n="${n.id}" style="cursor:pointer">` +
+            `<circle cx="${n.x}" cy="${n.y}" r="${r + 3.5}" fill="transparent"/>` +
+            `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${lv > 0 ? col : open ? "#2c2a4a" : "#1a1a2a"}" stroke="${sel ? "#fff" : lv > 0 ? "#fff" : open ? col : "#4a4866"}" stroke-width="${sel ? 0.9 : 0.5}"/>` +
+            (n.cap ? `<text x="${n.x}" y="${n.y + 1.3}" font-size="3.6" text-anchor="middle" fill="${lv > 0 ? "#222" : col}">★</text>` : "") +
+            `<text x="${n.x}" y="${n.y + r + 4.2}" font-size="3" text-anchor="middle" fill="${lv > 0 ? "#fff" : open ? "#c8c4e8" : "#6a6888"}">${n.name}${n.max > 1 ? ` ${lv}/${n.max}` : ""}</text></g>`;
+    }
+    const map = $("starMap");
+    map.innerHTML = svg;
+    map.querySelectorAll("g.star").forEach(gEl => gEl.addEventListener("click", () => { starSel = gEl.dataset.n; renderStars(); }));
+    // 설명 칸
+    const info = $("starInfo");
+    const n = starSel ? NODE_BY_ID[starSel] : null;
+    if (!n) info.innerHTML = `<h3 style="color:${col}">${cons.icon} ${cons.name}의 별자리</h3><p>${cons.desc}</p><p class="hint">별을 누르면 설명이 나와요.<br>이어진 별을 하나라도 밝혀야 다음 별을 밝힐 수 있어요.<br>★ 큰 별은 끝별(마지막 특전)이에요.</p>`;
+    else {
+        const lv = Meta.level(n.id), open = Meta.unlocked(n.id), cost = Meta.cost(n.id), maxed = lv >= n.max;
+        const btn = maxed ? `<button disabled>완성</button>` : !open ? `<button disabled>🔒 이어진 별을 먼저</button>` :
+            `<button id="btnBuyStar" ${Meta.d.dust >= cost ? "" : "disabled"}>✦ ${cost} 밝히기</button>`;
+        info.innerHTML = `<h3 style="color:${col}">${n.cap ? "★ " : ""}${n.name}</h3><div class="lv">${"★".repeat(lv)}${"☆".repeat(n.max - lv)}  ${lv}/${n.max}</div>` +
+            `<p>${n.eff}${n.max > 1 && !n.once ? " (단계마다)" : ""}</p>${btn}`;
+        const b = $("btnBuyStar");
+        if (b) b.onclick = () => { if (Meta.buy(n.id)) { Sound.play("powerup", { vol: 0.5 }); } renderStars(); };
+    }
+    const total = Meta.totalCost();
+    $("starsNote").textContent = `쓴 꿈가루 ${Meta.d.spent} / 전체 ${total}` + (Meta.d.refunded ? " · 별자리가 새로 바뀌어서 예전에 쓴 꿈가루를 모두 돌려드렸어요" : "");
     $("btnStarsReset").textContent = resetArmed ? "정말 초기화할까요? (한 번 더 누르기)" : `초기화 (쓴 꿈가루 ${Meta.d.spent} 돌려받기)`;
 }
-$("btnStars").onclick = () => { resetArmed = false; renderStars(); show("stars"); };
+$("btnStars").onclick = () => { resetArmed = false; starSel = null; renderStars(); show("stars"); if (Meta.d.refunded) { Meta.d.refunded = false; Meta.save(); } };
 $("btnStarsReset").onclick = () => {
     if (!resetArmed) { resetArmed = true; renderStars(); return; }
     Meta.reset(); resetArmed = false; renderStars();

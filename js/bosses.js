@@ -66,10 +66,10 @@ function updateBoss(g, m, now, canAttack) {
     const T = g.aimFor(m);
     switch (m.bstate) {
         case "phase":
-            if (now >= m.bUntil) { m.bstate = "move"; m.bUntil = now + randInt(BOSS_MOVE_MS[0], BOSS_MOVE_MS[1]); m.moveShotDone = false; }
+            if (now >= m.bUntil) { m.bstate = "move"; m.bUntil = now + Math.round(randInt(BOSS_MOVE_MS[0], BOSS_MOVE_MS[1]) * ENEMY_TUNE.tempo); m.moveShotDone = false; }
             return;
         case "rest":
-            if (now >= m.bUntil) { m.bstate = "move"; m.bUntil = now + randInt(BOSS_MOVE_MS[0], BOSS_MOVE_MS[1]); m.moveShotDone = false; }
+            if (now >= m.bUntil) { m.bstate = "move"; m.bUntil = now + Math.round(randInt(BOSS_MOVE_MS[0], BOSS_MOVE_MS[1]) * ENEMY_TUNE.tempo); m.moveShotDone = false; }
             return;
         case "move": {
             const def = bossDef(m);
@@ -105,7 +105,7 @@ function updateBoss(g, m, now, canAttack) {
             if (r.done) {
                 m.gen = null; m.patternName = null; m.dashState = "chase"; m.airborne = false; m.hidden = false; m.jumpHeight = 0;
                 m.bstate = "rest";
-                m.bUntil = now + Math.round(randInt(BOSS_REST_MS[0], BOSS_REST_MS[1]) * (m.phase >= 3 ? BOSS_PHASE3_REST_MULT : 1));
+                m.bUntil = now + Math.round(randInt(BOSS_REST_MS[0], BOSS_REST_MS[1]) * ENEMY_TUNE.tempo * (m.phase >= 3 ? BOSS_PHASE3_REST_MULT : 1));
             } else m.genWait = now + (r.value || 0);
             return;
         }

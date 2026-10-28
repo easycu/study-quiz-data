@@ -329,12 +329,12 @@ function toDisplay(v, isCount) {
 function currentGunSettings() {
     const effects = {};
     GUN_ELEMENT_ORDER.forEach(el => { effects[el] = GUN_ELEMENTS[el][2].map(x => toDisplay(x, GUN_SETTING_INFO[el][3])); });
-    return { effects, atk_bonus: GUN_GRADES.map(g => toDisplay(g[5], false)), nature_basis: "max_hp" };
+    return { effects, atk_bonus: GUN_GRADES.map(g => toDisplay(g[5], false)), nature_basis: "max_hp", gun_v: 2 };
 }
 function defaultGunSettings() {
     const effects = {};
     GUN_ELEMENT_ORDER.forEach(el => { effects[el] = DEFAULT_GUN_EFFECTS[el].map(x => toDisplay(x, GUN_SETTING_INFO[el][3])); });
-    return { effects, atk_bonus: DEFAULT_GRADE_ATK_BONUS.map(x => toDisplay(x, false)), nature_basis: "max_hp" };
+    return { effects, atk_bonus: DEFAULT_GRADE_ATK_BONUS.map(x => toDisplay(x, false)), nature_basis: "max_hp", gun_v: 2 };
 }
 function validateGunSettings(data) {
     const errors = [];
@@ -398,6 +398,7 @@ async function syncGunSettings(base) {
     } catch (e) { return " · 총 설정은 저장된 값 사용"; }
     if (!data || typeof data !== "object") return " · 총 설정 파일 오류(저장된 값 사용)";
     if (data.nature_basis !== "max_hp") { data.effects = data.effects || {}; data.effects.nature = defaultGunSettings().effects.nature; }
+    migrateGunV2(data);
     const [internal, errors] = validateGunSettings(data);
     if (errors.length) return " · 총 설정 파일 오류(저장된 값 사용)";
     applyGunSettings(internal);
@@ -406,6 +407,15 @@ async function syncGunSettings(base) {
     return " · 총 설정 적용";
 }
 
+// 2026-10-28: 어둠(1초 무적 -> 영혼 폭발), 바람(관통 -> 폭발탄)으로 바뀜. 예전 설정 값은 새 기본값으로
+function migrateGunV2(data) {
+    if (data.gun_v === 2) return false;
+    data.effects = data.effects || {};
+    const d = defaultGunSettings().effects;
+    data.effects.dark = d.dark; data.effects.wind = d.wind;
+    data.gun_v = 2;
+    return true;
+}
 function loadGunSettings() {
     const data = Store.get(KEY_GUNS, null);
     if (!data) return false;
@@ -416,6 +426,7 @@ function loadGunSettings() {
         data.effects.nature = defaultGunSettings().effects.nature;
         migrated = true;
     }
+    if (typeof data === "object" && migrateGunV2(data)) migrated = true;
     const [internal, errors] = validateGunSettings(data);
     if (errors.length) return false;
     applyGunSettings(internal);

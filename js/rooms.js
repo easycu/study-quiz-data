@@ -15,7 +15,7 @@ function initSpecialRoom(g, room) {
     else if (room.type === "altar") room.special = { uses: 0, near: false };
     else if (room.type === "shop") {
         // 일반 2장 + 희귀 이상 1장 (전설이 섞일 수도)
-        const a = rollCards(g, 3, {}).filter(c => c.id !== "gold").slice(0, 2), b = rollCards(g, 2, { min: "rare" }).filter(c => c.id !== "gold" && !a.includes(c)).slice(0, 1);
+        const a = rollCards(g, 3, {}).filter(c => c.id !== "gold").slice(0, 2), b = rollCards(g, 2, { min: Meta.bonus("shopLegend") > 0 ? "legend" : "rare" }).filter(c => c.id !== "gold" && !a.includes(c)).slice(0, 1);
         const items = [...a, ...b]
             .map(c => ({ id: c.id, price: shopPrice(SHOP_PRICE[c.r]), sold: false }));
         items.push({ id: "_heal", price: shopPrice(SHOP_HEAL_PRICE), sold: false });
@@ -35,7 +35,8 @@ function updateSpecialRoom(g, room, now) {
             g.shake(6, 300);
             Sound.play("clear", { vol: 0.6 });
             g.dropGold(SPECIAL_X, SPECIAL_Y, randInt(6, 12));
-            g.openCardPick({ n: 3, min: "rare", boost: 1.4, title: "보물 상자!", sub: "희귀 이상 카드 3장 중 하나", color: [255, 215, 90] });
+            const n = 3 + Meta.bonus("chest4");
+            g.openCardPick({ n, min: "rare", boost: 1.4, title: "보물 상자!", sub: `희귀 이상 카드 ${n}장 중 하나`, color: [255, 215, 90] });
             g.wantSave = true;
         }
         return;
@@ -91,7 +92,7 @@ function altarChoose(g, i) {
     g.popup(p.x, p.y - p.radius - 10, `-${fmtNum(cost)}`, [210, 120, 255]);
     g.wantSave = true;
     const r = Math.random();
-    if (r < 0.25) {
+    if (r < Math.max(0.05, 0.25 - Meta.bonus("altarLuck"))) {
         g.addGold(5);
         cp.msg = "꽝...  (위로금 5골드)"; cp.msgAt = g.now;
         cp.sub = `남은 기회 ${ALTAR_USES - sp.uses}번`;

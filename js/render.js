@@ -609,12 +609,14 @@ function drawGame(ctx, g, now) {
     if (g.streak >= 2) tail += `🔥 연속 정답 ${g.streak}`;
     if (p.revives > 0) tail += `${tail ? "   " : ""}❂ x${p.revives}`;
     if (tail) R.text(ctx, tail, SCREEN_W - 20, 62, 14, [255, 170, 90], { align: "right", bold: true, shadow: true });
-    if (p._synTier > 0 && p.gun) R.text(ctx, `★ ${p.gun.elementName} 시너지 ${["", "I", "II", "완성"][p._synTier]}`, SKILL_HUD_X + SKILL_SLOTS * (SKILL_HUD_SIZE + SKILL_HUD_GAP) + 2, SKILL_HUD_Y + 12, 13, p.gun.color, { bold: true, shadow: true });
+    if (p._synTier > 0 && p.gun) R.text(ctx, `★ ${p.gun.elementName} 시너지 ${["", "I", "II", "완성"][p._synTier]}`, SKILL_HUD_X + playerSkillSlots(p) * (SKILL_HUD_SIZE + SKILL_HUD_GAP) + SKILL_HUD_SIZE + 14, SKILL_HUD_Y + 12, 13, p.gun.color, { bold: true, shadow: true });
+    drawDashHud(ctx, p, now);
+    if (g.input.lastType === "touch" && !g.gameOver) drawDashButton(ctx, p, now);
     const sec = Math.max(0, Math.floor(g.elapsedMs / 1000));
     R.text(ctx, `${RunMods.depth ? `심연 ${RunMods.depth}  ·  ` : ""}${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`, SCREEN_W - 20, 2, 14, [150, 150, 165], { align: "right" });
     R.text(ctx, g.input.lastType === "touch" ? "이동: 화면을 누르고 끌기 (조이패드)   (공격은 자동)" : "이동: WASD / 방향키 / 마우스 끌기   (공격은 자동)", 20, SCREEN_H - 24, 14, [170, 170, 185]);
     drawSkillHud(ctx, p, now);
-    drawMinimap(ctx, g.rooms, g.currentCoord, now);
+    drawMinimap(ctx, g.rooms, g.currentCoord, now, g.input.lastType === "touch");
     for (const pp of g.popups) R.text(ctx, pp.text, pp.x - 10, pp.y + pp.offset(now) - 10, 14, pp.color, { shadow: true });
     if (g.banner && now < g.banner.until) drawTopBanner(ctx, g.banner, now);
     if (g.flashUntil && now < g.flashUntil) { ctx.fillStyle = rgb(g.flashColor || [255, 255, 255], 0.45 * Math.min(1, (g.flashUntil - now) / 300)); ctx.fillRect(0, 0, SCREEN_W, SCREEN_H); }
@@ -680,12 +682,14 @@ function drawCenterBanner(ctx, text, color) {
     R.rect(ctx, SCREEN_W / 2 - w / 2 - 24, SCREEN_H / 2 - h / 2 - 14, w + 48, h + 28, shadeColor(color, -60), 2, 12);
     R.text(ctx, text, SCREEN_W / 2, SCREEN_H / 2 - h / 2, 44, color, { bold: true, shadow: true, align: "center" });
 }
-function drawMinimap(ctx, rooms, cur, now) {
+function drawMinimap(ctx, rooms, cur, now, top) {
     const cell = 14, gap = 4;
     const xs = [...rooms.values()].map(r => r.x), ys = [...rooms.values()].map(r => r.y);
     const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
     const mw = (maxX - minX + 1) * (cell + gap), mh = (maxY - minY + 1) * (cell + gap);
-    const ox = SCREEN_W - 20 - mw, oy = SCREEN_H - 30 - mh;
+    // 휴대폰은 오른쪽 아래에 대시 버튼이 있어서 지도를 오른쪽 위로
+    const ox = SCREEN_W - 20 - mw, oy = top ? PLAY_TOP + 14 : SCREEN_H - 30 - mh;
+    if (top) ctx.globalAlpha = 0.8;
     R.rect(ctx, ox - 8, oy - 8, mw + 16, mh + 16, [18, 18, 26], 0, 6);
     R.rect(ctx, ox - 7.5, oy - 7.5, mw + 15, mh + 15, [80, 80, 100], 1, 6);
     const pulse = 2 + Math.trunc(2 * Math.abs(Math.sin(now / 150)));
@@ -698,6 +702,7 @@ function drawMinimap(ctx, rooms, cur, now) {
         if (icon) { R.rect(ctx, px + 1, py + 1, cell - 2, cell - 2, icon[1], 2, 2); R.text(ctx, icon[0], px + cell / 2, py - 1, 11, isCur ? [40, 30, 0] : icon[1], { align: "center", bold: true }); }
         if (isCur) R.rect(ctx, px - pulse, py - pulse, cell + pulse * 2, cell + pulse * 2, [255, 255, 255], 1, 3);
     }
+    ctx.globalAlpha = 1;
 }
 
 // ---------------- 퀴즈 화면 ----------------
@@ -1132,6 +1137,13 @@ function drawPet(ctx, pt, now) {
     }
 }
 function drawDecoy(ctx, d, now) {
+    if (d.image) {           // 대시 잔상 분신
+        ctx.save(); ctx.globalAlpha = 0.45 + 0.15 * Math.sin(now / 80);
+        R.circle(ctx, d.x, d.y, 18, [140, 220, 255], 2);
+        R.circle(ctx, d.x, d.y, 12, rgb([140, 220, 255], 0.4));
+        ctx.restore();
+        return;
+    }
     R.circle(ctx, d.x, d.y, 380, rgb([255, 200, 90], 0.05));
     R.circle(ctx, d.x, d.y, 18 + 4 * Math.sin(now / 100), [255, 200, 90], 2);
     R.line(ctx, d.x, d.y + 14, d.x, d.y - 26, [120, 90, 60], 3);
@@ -1197,7 +1209,7 @@ function drawBossBar(ctx, m, now) {
 // HUD의 기억 칸
 const SKILL_HUD_X = 380, SKILL_HUD_Y = 46, SKILL_HUD_SIZE = 42, SKILL_HUD_GAP = 8;
 function drawSkillHud(ctx, p, now) {
-    for (let i = 0; i < SKILL_SLOTS; i++) {
+    for (let i = 0; i < playerSkillSlots(p); i++) {
         const x = SKILL_HUD_X + i * (SKILL_HUD_SIZE + SKILL_HUD_GAP), y = SKILL_HUD_Y, S = SKILL_HUD_SIZE;
         const s = p.skills[i];
         R.rect(ctx, x, y, S, S, [16, 16, 24], 0, 8);
@@ -1255,7 +1267,7 @@ function drawSkillPick(ctx, sp, p, now, touchMode) {
         sp.options.forEach((id, i) => {
             const def = SKILL_BY_ID[id], owned = p.skills.find(s => s.id === id);
             const lvl = owned ? Math.min(SKILL_MAX_LEVEL, owned.level + 1) : 0;
-            const head = owned ? `+${owned.level} → +${lvl}` : (p.skills.length >= SKILL_SLOTS ? "NEW (교체)" : "NEW");
+            const head = owned ? `+${owned.level} → +${lvl}` : (p.skills.length >= playerSkillSlots(p) ? "NEW (교체)" : "NEW");
             drawSkillCard(ctx, rects.cards[i], def, lvl, !!owned, sp.sel === i, p, now, head);
         });
     } else {
@@ -1306,7 +1318,7 @@ function drawCardFace(ctx, rect, c, g, now, k, extra) {
     R.text(ctx, c.name, x + w / 2, y + 126, 19, [255, 255, 255], { align: "center", bold: true });
     const lines = wrapTextLines(ctx, cardDesc(g, c), w - 24, 14);
     lines.slice(0, 3).forEach((l, i) => R.text(ctx, l, x + w / 2, y + 158 + i * 21, 14, [220, 220, 232], { align: "center" }));
-    const note = c.id && CARD_BY_ID[c.id] === c ? cardStackNote(g, c) : "";
+    const note = c.note || (c.id && CARD_BY_ID[c.id] === c ? cardStackNote(g, c) : "");
     if (note) R.text(ctx, `↓ ${note}`, x + w / 2, y + 158 + Math.min(3, lines.length) * 21 + 2, 12, [255, 170, 110], { align: "center", bold: true });
     if (extra) extra(x, y, w, h);
     ctx.restore();
@@ -1321,7 +1333,7 @@ function drawCardPick(ctx, g, cp, now, touch) {
         cp.options.forEach((c, i) => {
             const k = clamp((age - i * 70) / 160, 0, 1);
             if (k > 0) drawCardFace(ctx, rects.cards[i], c, g, now, k, (x, y, w, h) =>
-                R.text(ctx, touch ? "누르면 선택" : `${i + 1}번 키 / 클릭`, x + w / 2, y + h - 26, 12, [140, 140, 165], { align: "center" }));
+                { if (!c.note && !cardStackNote(g, c)) R.text(ctx, touch ? "누르면 선택" : `${i + 1}번 키 / 클릭`, x + w / 2, y + h - 26, 12, [140, 140, 165], { align: "center" }); });
         });
     } else if (cp.mode === "shop") {
         R.text(ctx, `💰 ${g.gold} 골드`, SCREEN_W / 2, 140, 18, [255, 225, 130], { align: "center", bold: true });
@@ -1356,4 +1368,43 @@ function drawCardPick(ctx, g, cp, now, touch) {
         R.rect(ctx, bx, by, bw, bh, [52, 52, 70], 0, 10); R.rect(ctx, bx + 1, by + 1, bw - 2, bh - 2, [150, 150, 180], 2, 10);
         R.text(ctx, cp.mode === "shop" ? "나가기" : "닫기", bx + bw / 2, by + 11, 20, [255, 255, 255], { align: "center", bold: true });
     }
+}
+
+// =============================================================
+// 대시: HUD 칸(기억 칸 옆) / 휴대폰 대시 버튼
+// =============================================================
+function dashCdRatio(p, now) {
+    const max = dashMaxCharges(p);
+    if (p.dashCharges >= max) return 0;
+    return clamp((p.dashReadyAt - now) / dashCooldown(p), 0, 1);
+}
+function drawDashHud(ctx, p, now) {
+    const S = SKILL_HUD_SIZE, x = SKILL_HUD_X + playerSkillSlots(p) * (S + SKILL_HUD_GAP) + 4, y = SKILL_HUD_Y;
+    const s = p.dashSkill, col = s ? skillElementColor(SKILL_BY_ID[s.id].el) : [140, 220, 255];
+    R.rect(ctx, x, y, S, S, s ? shadeColor(col, -120) : [16, 22, 30], 0, 8);
+    R.text(ctx, s ? DASH_BY_ID[s.id].icon : "⇢", x + S / 2, y + 6, s ? 20 : 18, col, { align: "center", bold: true });
+    const k = dashCdRatio(p, now);
+    if (k > 0 && p.dashCharges <= 0) {
+        ctx.save(); ctx.beginPath(); ctx.moveTo(x + S / 2, y + S / 2);
+        ctx.arc(x + S / 2, y + S / 2, S * 0.75, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
+        ctx.closePath(); ctx.clip(); R.rect(ctx, x, y, S, S, "rgba(0,0,0,0.6)", 0, 8); ctx.restore();
+    }
+    const flash = p._dashReadyFlash && now - p._dashReadyFlash < 200;
+    R.rect(ctx, x + 1, y + 1, S - 2, S - 2, flash ? [255, 255, 255] : col, 2, 8);
+    if (s && s.level > 0) R.text(ctx, `+${s.level}`, x + S - 3, y + S - 15, 12, [255, 230, 120], { align: "right", shadow: true, bold: true });
+    const max = dashMaxCharges(p);
+    if (max > 1) for (let i = 0; i < max; i++) R.circle(ctx, x + 7 + i * 8, y + S - 7, 3, i < p.dashCharges ? [140, 220, 255] : [60, 60, 80]);
+}
+function drawDashButton(ctx, p, now) {
+    const { x, y, r } = DASH_BTN, ready = p.dashCharges > 0, k = dashCdRatio(p, now);
+    const s = p.dashSkill, col = s ? skillElementColor(SKILL_BY_ID[s.id].el) : [140, 220, 255];
+    ctx.save();
+    ctx.globalAlpha = ready ? 0.85 : 0.5;
+    R.circle(ctx, x, y, r, rgb([20, 26, 40], 0.7));
+    R.circle(ctx, x, y, r, ready ? col : [90, 90, 110], 3);
+    if (k > 0) { ctx.beginPath(); ctx.arc(x, y, r - 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - k)); ctx.strokeStyle = rgb(col, 0.9); ctx.lineWidth = 5; ctx.stroke(); }
+    R.text(ctx, s ? DASH_BY_ID[s.id].icon : "⇢", x, y - 20, 28, ready ? [255, 255, 255] : [150, 150, 170], { align: "center", bold: true });
+    R.text(ctx, "대시", x, y + 12, 12, [200, 220, 240], { align: "center", bold: true });
+    if (dashMaxCharges(p) > 1) R.text(ctx, `x${p.dashCharges}`, x + r - 6, y - r + 2, 13, [255, 230, 120], { align: "right", bold: true, shadow: true });
+    ctx.restore();
 }

@@ -21,14 +21,14 @@ function scaleHp(base, power) {
 function scaleDmg(base, power) {
     if (base <= 0) return 0;
     const s = power - 1;
-    return Math.max(1, pyRound(base * (1 + STAGE_DMG_GROWTH_LINEAR * s + STAGE_DMG_GROWTH_QUAD * s * s) * RunMods.dmgMult));
+    return Math.max(1, pyRound(base * (1 + STAGE_DMG_GROWTH_LINEAR * s + STAGE_DMG_GROWTH_QUAD * s * s) * RunMods.dmgMult * ENEMY_TUNE.dmg));
 }
 function scaleMonsterSpeed(base, power) {
     return base * Math.min(STAGE_MONSTER_SPEED_CAP, 1 + STAGE_MONSTER_SPEED_GROWTH * (power - 1));
 }
 function scaleMonsterCooldown(base, power) {
     const mult = Math.max(STAGE_MONSTER_FIRE_RATE_FLOOR, 1 - STAGE_MONSTER_FIRE_RATE_GROWTH * (power - 1));
-    return Math.max(150, pyRound(base * mult));
+    return Math.max(150, pyRound(base * mult * ENEMY_TUNE.fire));
 }
 
 function randomMonsterSubtype(mtype, stage) {
@@ -105,6 +105,15 @@ class Player {
         this.clearHeal = 0;                        // 방 클리어 회복 (최대 체력 비율)
         this._synTier = 0;
         this.cardStacks = {};                      // 종류별로 고른 카드 수 (겹칠수록 효과 감소)
+        // 대시
+        this.dash = null; this.dashCharges = 1; this.dashReadyAt = 0; this.dashInvulnUntil = 0;
+        this.dashSkill = null;                     // 대시 기억 {id, level}
+        this.dashEmpower = null; this.nextCrit = 0;
+        this.dashCdPct = 0; this.dashInvBonus = 0; this.dashDistPct = 0; this.dashChargeBonus = 0; this.dashRam = 0;
+        this.perfectAspd = 0; this.perfectStealth = 0; this.stealthUntil = 0;
+        // 별자리 / 수호석
+        this.elemBurst = 0; this._shotCount = 0; this.skillDmg = 0; this.skillCd = 0; this.synBonus = 0; this.castGapCut = 0; this.extraSlot = 0;
+        this.regenPct = 0; this.armor = 0; this.bossDmg = 0; this.eliteHeal = 0; this.stone = "warrior";
     }
 }
 function critChance(p) { return CRIT_CHANCE + (p ? p.critBonus : 0); }
@@ -226,7 +235,7 @@ function rollEliteAffixes(stage, subtype) {
     const n = stage >= ELITE_TWO_AFFIX_STAGE ? 2 : 1;
     return sample(pool, n);
 }
-function eliteSpawnChance(stage) { return Math.min(ELITE_CHANCE_MAX, ELITE_SPAWN_CHANCE + ELITE_CHANCE_PER_STAGE * (stage - 1)); }
+function eliteSpawnChance(stage) { return Math.min(ELITE_CHANCE_MAX + RunMods.eliteAdd, ELITE_SPAWN_CHANCE + ELITE_CHANCE_PER_STAGE * (stage - 1) + RunMods.eliteAdd); }
 function affixName(key) { const a = ELITE_AFFIXES.find(x => x[0] === key); return a ? a[1] : key; }
 function affixColor(key) { const a = ELITE_AFFIXES.find(x => x[0] === key); return a ? a[2] : [255, 255, 255]; }
 
@@ -359,11 +368,11 @@ class Gun {
     get borderColor() { return GUN_GRADES[this.gradeIndex][3]; }
     get borderWidth() { return GUN_GRADES[this.gradeIndex][4]; }
     get atkBonus() { return GUN_GRADES[this.gradeIndex][5]; }
-    get effectValue() { return GUN_ELEMENTS[this.element][2][this.gradeIndex]; }
+    get effectValue() { return GUN_ELEMENTS[this.element][2][this.gradeIndex] * (RunMods.gunEff || 1); }   // 별자리 "원소 친화"
     get name() { return `[${this.gradeName}] ${this.elementName}의 총`; }
     description() {
         const atk = `공격력 +${pyRound(this.atkBonus * 100)}%`;
-        if (this.element === "wind") return `${atk} · 탄이 적 ${this.effectValue}마리 관통 (관통할 때마다 피해 -${pyRound((1 - WIND_PIERCE_DAMAGE_MULT) * 100)}%)`;
+        if (this.element === "wind") return `${atk} · 맞힌 자리에서 폭발: 주변 적에게 피해의 ${Math.round(this.effectValue * 100)}%`;
         const v = Math.round(this.effectValue * 10000) / 100;
         const e = {
             fire: `5초간 매초 공격력의 ${v}% 화염 피해`,
@@ -371,7 +380,7 @@ class Gun {
             lightning: `근처 적 ${LIGHTNING_CHAIN_COUNT}명에게 피해의 ${v}% 번개`,
             light: `맞힐수록 빛 표식 중첩(최대 ${LIGHT_MAX_STACKS}), 표식당 피해 +${v}%`,
             nature: `명중할 때마다 최대체력의 ${v}% 회복`,
-            dark: `${v}% 확률로 1초 무적 (끝난 뒤 1초간 재발동 없음)`,
+            dark: `처치하면 영혼 폭발: 주변 적에게 죽은 적 최대 체력의 ${v}% (연쇄 폭발)`,
             earth: `${v}% 확률로 1초 기절 (보스 0.5초, 끝난 뒤 1초간 재기절 없음)`,
             spread: `한 번에 ${SPREAD_PELLETS}발 부채꼴 발사, 1발 피해 ${v}%`,
         }[this.element];
@@ -406,7 +415,6 @@ function makePlayerBullets(p, dx, dy) {
         return out;
     }
     const b = new Bullet(p.x, p.y, dx, dy, 8, dmg, "player", false, gun ? 6 : 5, gun);
-    if (gun && gun.element === "wind") { b.pierceLeft = gun.effectValue; b.hitSet = new Set(); }
     const out = [b];
     // 카드 "총알 +1": 양옆으로 조금 약한 총알
     for (let k = 1; k <= (p.extraShots || 0); k++) {
@@ -414,7 +422,6 @@ function makePlayerBullets(p, dx, dy) {
             if (out.length > 1 + 2 * (p.extraShots || 0)) break;
             const [ndx, ndy] = rotateDirection(dx, dy, sgn * 9 * k);
             const e = new Bullet(p.x, p.y, ndx, ndy, 8, dmg * 0.5, "player", false, 5, gun);
-            if (gun && gun.element === "wind") { e.pierceLeft = gun.effectValue; e.hitSet = new Set(); }
             out.push(e);
         }
     }
@@ -448,12 +455,8 @@ function applyGunOnHit(gun, player, target, monsters, hitDamage, now) {
         }
         case "light": target.lightStacks = Math.min(LIGHT_MAX_STACKS, target.lightStacks + 1); break;
         case "nature": out.heal = player.maxHp * v; break;   // 최대체력 기준
-        case "dark":
-            if (now >= player.darkReadyAt && Math.random() < v) {
-                out.darkProc = true;
-                player.darkReadyAt = now + DARK_INVULN_MS + DARK_COOLDOWN_MS;
-            }
-            break;
+        case "dark": break;                                   // 영혼 폭발은 처치할 때 (Game.soulBlast)
+        case "wind": out.blast = hitDamage * v; break;        // 폭발탄
         case "earth":
             if (now >= target.stunImmuneUntil && Math.random() < v) {
                 const dur = target.isBoss ? EARTH_BOSS_STUN_MS : EARTH_STUN_MS;

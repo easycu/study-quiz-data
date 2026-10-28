@@ -27,6 +27,8 @@ const CARD_DEFS = [
     { id: "pierce", r: "rare", name: "꿰뚫는 탄환", icon: "➹", color: [150, 230, 255], desc: "총알이 적 1명 더 관통", can: g => g.player.pierceBonus < 3, apply: g => { g.player.pierceBonus += 1; } },
     { id: "newskill", r: "rare", w: 1.8, name: "새로운 기억", icon: "✧", color: [200, 160, 255], desc: "기억(스킬) 3개 중 하나를 얻거나 강화",
       can: g => rollSkillOffers(g.player).length > 0, apply: g => { g.queueFront(() => g.openSkillPick()); } },
+    { id: "newdash", r: "rare", w: 1.3, name: "새로운 대시 기억", icon: "⇢", color: [140, 220, 255], desc: g => g.player.dashSkill ? "대시 기억 3개 중 하나 (같은 것: 강화 / 다른 것: 교체)" : "대시할 때 발동하는 기억 3개 중 하나",
+      can: g => !(g.player.dashSkill && g.player.dashSkill.level >= SKILL_MAX_LEVEL), apply: g => { g.queueFront(gg => openDashPick(gg)); } },
     { id: "gunup", r: "rare", name: "총 다듬기", icon: "▲", color: [255, 210, 120], desc: g => g.player.gun ? `총 등급 한 단계 상승 (${g.player.gun.gradeName} → ${GUN_GRADES[g.player.gun.gradeIndex + 1] ? GUN_GRADES[g.player.gun.gradeIndex + 1][1] : ""})` : "총 등급 상승",
       can: g => !!g.player.gun && g.player.gun.gradeIndex < GUN_GRADES.length - 1,
       apply: g => { const gun = g.player.gun; g.player.gun = new Gun(gun.element, GUN_GRADES[gun.gradeIndex + 1][0]); g.checkSynergy(); } },
@@ -78,7 +80,7 @@ function rollCards(g, n, o) {
         let pick = null;
         for (let k = order.indexOf(rar); k >= 0 && !pick; k--) {
             const pool = CARD_DEFS.filter(c => c.r === order[k] && cardOk(g, c) && !out.includes(c));
-            if (pool.length) pick = weightedChoice(pool, pool.map(c => c.w || 1));
+            if (pool.length) pick = weightedChoice(pool, pool.map(c => (c.w || 1) * (c.id === "newskill" ? 1 + Meta.bonus("newSkillW") : 1)));
         }
         if (pick) out.push(pick);
     }

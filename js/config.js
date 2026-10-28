@@ -157,6 +157,9 @@ const ELITE_SHIELD_GAP_MS = 6500, ELITE_SHIELD_RATIO = 0.3, ELITE_SHIELD_MS = 30
 // ---- 보스 공통 구조 ----
 const BOSS_PHASE2_RATIO = 0.70, BOSS_PHASE3_RATIO = 0.35, BOSS_PHASE_CHANGE_MS = 1300;
 const BOSS_MOVE_MS = [900, 1500], BOSS_REST_MS = [1000, 1500], BOSS_REST_DAMAGE_MULT = 1.25;
+// 대시(무적 회피)가 생긴 만큼 적을 조금 더 세게: 예고 시간(피할 수 있는 시간)은 그대로 두고
+//   tempo: 보스 패턴 사이 이동·휴식 시간 배수 / fire: 몬스터 공격 간격 배수 / dmg: 적 공격력 배수
+const ENEMY_TUNE = { tempo: 0.75, fire: 0.8, dmg: 1.3 };     // 봇 시뮬레이션: 대시 쓰는 지금 ≈ 대시 없던 예전 (받는 피해)
 const BOSS_PHASE3_SPEED_MULT = 1.2, BOSS_PHASE3_REST_MULT = 0.65;
 const BOSS_GOLEM_UNLOCK_STAGE = 2, BOSS_MAGE_UNLOCK_STAGE = 4, BOSS_BLADE_UNLOCK_STAGE = 5;
 const BOSS_QUEEN_UNLOCK_STAGE = 6, BOSS_JUDGE_UNLOCK_STAGE = 8, BOSS_HYBRID_UNLOCK_STAGE = 10, BOSS_HYBRID_CHANCE = 0.4;
@@ -224,9 +227,9 @@ const GUN_ELEMENTS = {
     lightning: ["번개", [255, 235, 70], [0.20, 0.30, 0.40, 0.50, 0.60]],
     light: ["빛", [255, 250, 210], [0.02, 0.04, 0.06, 0.08, 0.10]],
     nature: ["자연", [90, 215, 90], [0.001, 0.0015, 0.002, 0.0025, 0.003]],   // 명중 1발당 최대체력의 %
-    dark: ["어둠", [150, 70, 220], [0.04, 0.08, 0.12, 0.16, 0.20]],
+    dark: ["어둠", [150, 70, 220], [0.20, 0.30, 0.40, 0.50, 0.60]],      // 영혼 폭발: 처치한 적 최대체력의 %
     earth: ["대지", [176, 124, 66], [0.04, 0.08, 0.12, 0.16, 0.20]],
-    wind: ["바람", [130, 235, 205], [1, 1, 2, 2, 3]],
+    wind: ["폭발", [255, 175, 70], [0.30, 0.40, 0.50, 0.60, 0.70]],      // 폭발탄: 맞힌 피해의 % (키 이름은 예전 그대로 wind)
     spread: ["산탄", [235, 90, 140], [0.30, 0.40, 0.50, 0.60, 0.70]],
 };
 const GUN_ELEMENT_ORDER = ["fire", "ice", "lightning", "light", "nature", "dark", "earth", "wind", "spread"];
@@ -234,6 +237,9 @@ const GUN_CHOICE_COUNT = 3, GUN_PICKUP_RADIUS = 30;
 const FIRE_BURN_DURATION_MS = 5000, FIRE_BURN_TICK_MS = 1000, ICE_SLOW_DURATION_MS = 2000;
 const LIGHTNING_CHAIN_COUNT = 3, LIGHTNING_CHAIN_RANGE = 170, LIGHTNING_ZAP_MS = 180;
 const DARK_INVULN_MS = 1000, DARK_COOLDOWN_MS = 1000;
+// 영혼 폭발(어둠) / 폭발탄(바람 자리)
+const SOUL_BLAST_RADIUS = 85, SOUL_CHAIN_MAX = 3, SOUL_CHAIN_DECAY = 0.7, SOUL_BOSS_CAP_SHOTS = 3;
+const BLAST_RADIUS = 58;
 const EARTH_STUN_MS = 1000, EARTH_BOSS_STUN_MS = 500, EARTH_STUN_IMMUNE_MS = 1000;
 const WIND_PIERCE_DAMAGE_MULT = 0.8, SPREAD_PELLETS = 3, SPREAD_ANGLE_DEG = 12, LIGHT_MAX_STACKS = 20;
 const PORTAL_RADIUS = 30, REWARD_PICKUP_DELAY_MS = 1000, GUN_ROW_SPACING = 170;
@@ -245,9 +251,9 @@ const GUN_SETTING_INFO = {
     lightning: ["근처 3명에게 피해의 %", 0, 300, false],
     light: ["표식 1개당 추가 피해 % (최대 20중첩)", 0, 50, false],
     nature: ["명중 1발마다 최대체력의 % 회복", 0, 5, false],
-    dark: ["1초 무적 확률 %", 0, 100, false],
+    dark: ["처치 시 영혼 폭발: 죽은 적 최대체력의 %", 0, 200, false],
     earth: ["기절 확률 %", 0, 100, false],
-    wind: ["관통 마릿수", 0, 10, true],
+    wind: ["폭발탄: 주변 적에게 맞힌 피해의 %", 0, 300, false],
     spread: ["3발 중 1발 피해 %", 0, 300, false],
 };
 const GRADE_ATK_LIMITS = [0, 500];
@@ -295,7 +301,7 @@ const FINAL_BOSS_HP_MULT = 1.35;
 const ABYSS_HP_PER_DEPTH = 0.3, ABYSS_DMG_PER_DEPTH = 0.15, ABYSS_COUNT_PER_DEPTH = 0.5, ABYSS_DUST_PER_DEPTH = 0.3;
 const ENDING_DUST_BASE = 50;
 // 이번 판 난이도 배율 (심연 단계에 따라 게임 시작 때 정해짐)
-const RunMods = { depth: 0, hpMult: 1, dmgMult: 1, countAdd: 0, dustMult: 1 };
+const RunMods = { depth: 0, hpMult: 1, dmgMult: 1, countAdd: 0, dustMult: 1, gunEff: 1, eliteAdd: 0, goldMult: 1 };
 function setRunDepth(d) {
     RunMods.depth = d;
     RunMods.hpMult = 1 + ABYSS_HP_PER_DEPTH * d;
