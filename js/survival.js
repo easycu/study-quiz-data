@@ -3,7 +3,8 @@
 //   - 이동만 하면 무기는 자동. 시간이 갈수록 몬스터가 떼로 몰려온다.
 //   - 몬스터를 잡으면 경험치 보석 -> 레벨업하면 O/X 문제 1개
 //       맞히면 강화 3개(연속 정답 3번부터 4개) 중 하나, 틀리면 2개 중 하나
-//   - 무기 9종(최대 6개) + 능력 9종, 무기 5레벨에서 "각성"
+//   - 무기 9종(최대 6개) + 능력 9종. 무기마다 짝 능력이 1개씩 있어서
+//       무기 5단계 + 짝 능력 5단계가 되면 "각성" 화면이 뜬다 (SV_PAIR)
 //   - 엘리트/보스를 잡으면 보물 상자, 10분을 버티면 생존 성공
 // =============================================================
 "use strict";
@@ -73,12 +74,40 @@ const SV_EVO_NAME = {
     gun: "탄환 폭풍", whip: "사방 베기", orbit: "칼날 폭풍", lightning: "천둥 심판", aura: "지옥불 고리",
     missile: "미사일 세례", nova: "절대 영도", meteor: "유성우", boomer: "빛의 원무",
 };
+// 각성하면 달라지는 점 (각성 화면에 보여줌)
+const SV_EVO_DESC = {
+    gun: "탄환 +2 · 관통 +2 · 맞은 자리에서 작은 폭발",
+    whip: "네 방향을 한꺼번에 베고 길이·피해 크게 증가",
+    orbit: "칼날 +2 · 바깥쪽에 반대로 도는 칼날 고리 추가",
+    lightning: "번개 +3 · 맞은 적에서 번개가 3번 연쇄",
+    aura: "범위 크게 증가 · 닿은 적을 불태워 지속 피해",
+    missile: "미사일 +4 · 재사용 시간 크게 감소",
+    nova: "닿은 적을 얼려 잠깐 멈추게 함 · 범위 증가",
+    meteor: "운석 +4 · 범위·피해 증가",
+    boomer: "부메랑 +2 · 크기·피해 증가",
+};
+// 무기 ↔ 짝 능력 (1대1). 둘 다 5단계가 되면 각성. 짝을 바꾸고 싶으면 오른쪽 이름만 바꾸면 된다.
+//   (오른쪽 이름은 아래 SV_PASSIVES의 영어 이름 중 하나, 9개가 겹치지 않게)
+const SV_PAIR = {
+    gun: "amount",       // 마법 탄환 ↔ 개수
+    whip: "might",       // 회전 베기 ↔ 공격력
+    orbit: "speed",      // 회전 칼날 ↔ 신발
+    lightning: "crit",   // 낙뢰     ↔ 치명
+    aura: "regen",       // 화염 고리 ↔ 재생
+    missile: "haste",    // 유도 미사일 ↔ 가속
+    nova: "vital",       // 빙결 파동 ↔ 체력
+    meteor: "area",      // 별똥별   ↔ 범위
+    boomer: "magnet",    // 빛 부메랑 ↔ 자석
+};
+const SV_WEAPON_MAX = 5;
 // ---------------- 능력 (패시브) ----------------
 const SV_PASSIVES = {
     might:  { name: "공격력", tag: "힘", color: [255, 110, 90], desc: "모든 피해 +12%" },
     haste:  { name: "가속", tag: "속", color: [120, 220, 255], desc: "무기 재사용 -8%" },
     area:   { name: "범위", tag: "범", color: [190, 140, 255], desc: "공격 범위 +12%" },
-    amount: { name: "개수", tag: "수", color: [255, 230, 110], desc: "투사체 +1", max: 2 },
+    // 개수는 5단계까지: 1·3단계에 투사체 +1 (최대 +2, 예전과 같음), 2·4·5단계에 피해 +4%
+    amount: { name: "개수", tag: "수", color: [255, 230, 110], desc: "투사체 +1",
+              descLv: lv => ["투사체 +1", "모든 피해 +4%", "투사체 +1", "모든 피해 +4%", "모든 피해 +4%"][lv - 1] },
     speed:  { name: "신발", tag: "발", color: [140, 255, 170], desc: "이동속도 +9%" },
     vital:  { name: "체력", tag: "체", color: [255, 90, 120], desc: "최대 체력 +25 · 회복" },
     regen:  { name: "재생", tag: "재", color: [120, 255, 140], desc: "초당 체력 +0.4" },
@@ -86,6 +115,7 @@ const SV_PASSIVES = {
     crit:   { name: "치명", tag: "치", color: [255, 200, 80], desc: "치명타 확률 +6%" },
 };
 const SV_PASSIVE_MAX = 5;
+function svPassiveMax(id) { return SV_PASSIVES[id].max || SV_PASSIVE_MAX; }
 
 // 레벨업에 필요한 경험치: 처음엔 금방, 갈수록 오래 (뱀서 방식: 20레벨까지 +10씩, 40까지 +13, 그 뒤 +16)
 function svNeedXp(level) { return Math.round(2 * (level < 20 ? 5 + 10 * (level - 1) : level < 40 ? 195 + 13 * (level - 20) : 455 + 16 * (level - 40))); }
@@ -127,10 +157,11 @@ class SurvivalGame {
     pl(id) { return this.passives[id] || 0; }
     recalc() {
         const p = this.p, P = id => this.pl(id);
-        this.might = 1 + 0.12 * P("might");
+        const am = P("amount");
+        this.might = (1 + 0.12 * P("might")) * (1 + 0.04 * ((am >= 2) + (am >= 4) + (am >= 5)));
         this.cdMul = Math.pow(0.92, P("haste")) * (this.now < this.feverUntil ? 0.6 : 1);
         this.area = 1 + 0.12 * P("area");
-        this.amount = P("amount");
+        this.amount = (am >= 1) + (am >= 3);
         p.speed = 3.3 * (1 + 0.09 * P("speed"));
         const newMax = 100 + 25 * P("vital");
         if (newMax > p.maxHp) p.hp += newMax - p.maxHp;
@@ -870,39 +901,66 @@ class SurvivalGame {
         if (!q || q.kind !== "quiz" || q.phase !== "result" || performance.now() - q.phaseAt < 300) return;
         this.openPick(q.ok);
     }
-    // 고를 수 있는 강화 목록
+    // 고를 수 있는 강화 목록 (이미 최대 단계인 무기·능력은 절대 넣지 않는다)
     upgradePool() {
         const out = [];
-        for (const w of this.weapons) {
-            if (w.lv < 5) out.push({ type: "weapon", id: w.id, w: 3 });
-            else if (!w.evo) out.push({ type: "evo", id: w.id, w: 5 });
-        }
-        if (this.weapons.length < SV.MAX_WEAPONS) for (const id of Object.keys(SV_WEAPONS)) if (!this.weapon(id)) out.push({ type: "weapon", id, w: 1.6 });
-        for (const [id, d] of Object.entries(SV_PASSIVES)) if (this.pl(id) < (d.max || SV_PASSIVE_MAX)) out.push({ type: "passive", id, w: 1.3 });
+        for (const w of this.weapons) if (w.lv < SV_WEAPON_MAX) out.push({ type: "weapon", id: w.id, w: 3 });
+        if (this.weapons.length < SV.MAX_WEAPONS) for (const id of Object.keys(SV_WEAPONS)) if (!this.weapon(id)) out.push({ type: "weapon", id, w: 1.6, isNew: true });
+        for (const id of Object.keys(SV_PASSIVES)) if (this.pl(id) < svPassiveMax(id)) out.push({ type: "passive", id, w: 1.3 });
         return out;
     }
     rollOptions(n) {
         let pool = this.upgradePool();
         const out = [];
+        let room = SV.MAX_WEAPONS - this.weapons.length;     // 보물 상자에서 새 무기가 한꺼번에 여러 개 나와 6개를 넘지 않게
         while (out.length < n && pool.length) {
             const o = weightedChoice(pool, pool.map(x => x.w));
             out.push(o); pool = pool.filter(x => x !== o);
+            if (o.isNew && --room <= 0) pool = pool.filter(x => !x.isNew);
         }
         while (out.length < n) out.push(out.length % 2 ? { type: "gold" } : { type: "heal" });
         return out;
     }
     openPick(correct) {
         const n = correct ? (this.quiz.streak >= 3 ? 4 : 3) : 2;
-        this.ui = { kind: "pick", options: this.rollOptions(n), sel: null, openedAt: performance.now(), correct, streak: this.quiz.streak };
+        const options = this.rollOptions(n);
+        this.ui = { kind: "pick", options, infos: options.map(o => svOptionInfo(this, o)), sel: null, openedAt: performance.now(), correct, streak: this.quiz.streak };
     }
     applyOption(o) {
         const p = this.p;
-        if (o.type === "weapon") { const w = this.weapon(o.id); if (w) w.lv++; else this.addWeapon(o.id); }
-        else if (o.type === "evo") { const w = this.weapon(o.id); w.evo = true; this.say(`각성! ${SV_EVO_NAME[o.id]}`, [255, 215, 90], 1600); this.flashUntil = this.now + 300; this.flashColor = [255, 220, 120]; }
-        else if (o.type === "passive") this.passives[o.id] = this.pl(o.id) + 1;
+        if (o.type === "weapon") {
+            const w = this.weapon(o.id);
+            if (w) w.lv = Math.min(SV_WEAPON_MAX, w.lv + 1);
+            else if (this.weapons.length < SV.MAX_WEAPONS) this.addWeapon(o.id);
+        }
+        else if (o.type === "passive") this.passives[o.id] = Math.min(svPassiveMax(o.id), this.pl(o.id) + 1);
         else if (o.type === "heal") p.hp = Math.min(p.maxHp, p.hp + 40);
         else if (o.type === "gold") this.bonusScore = (this.bonusScore || 0) + 300;
         this.recalc();
+    }
+    // 무기 5단계 + 짝 능력 5단계 = 각성 준비 완료
+    evoReady(w) { return !w.evo && w.lv >= SV_WEAPON_MAX && this.pl(SV_PAIR[w.id]) >= svPassiveMax(SV_PAIR[w.id]); }
+    // 선택 화면이 닫힐 때마다 확인: 각성할 무기가 있으면 각성 화면을 띄운다 (여러 개면 하나씩 차례로)
+    closeUi() {
+        this.ui = null;
+        Input.releaseJoystick();
+        const w = this.weapons.find(x => this.evoReady(x));
+        if (w) {
+            this.ui = { kind: "evo", id: w.id, openedAt: performance.now() };
+            Sound.play("phase", { vol: 0.55 }); Sound.play("powerup", { vol: 0.5, rate: 0.8 });
+        }
+    }
+    confirmEvo() {
+        const u = this.ui;
+        if (!u || u.kind !== "evo" || performance.now() - u.openedAt < 900) return;
+        const w = this.weapon(u.id);
+        w.evo = true;
+        this.say(`각성! ${SV_EVO_NAME[u.id]}`, [255, 215, 90], 1600);
+        this.flashUntil = this.now + 300; this.flashColor = [255, 220, 120];
+        spawnHitSparks(this.particles, this.p.x, this.p.y, [255, 215, 90], this.now, 18, true);
+        Sound.play("stage", { vol: 0.6 });
+        this.shake(8, 400);
+        this.closeUi();
     }
     pickSelect(i) {
         const u = this.ui;
@@ -910,14 +968,16 @@ class SurvivalGame {
         this.applyOption(u.options[i]);
         Sound.play("pickup", { vol: 0.55 });
         spawnHitSparks(this.particles, this.p.x, this.p.y, [255, 230, 140], this.now, 10, true);
-        this.ui = null;
-        Input.releaseJoystick();
+        this.closeUi();
     }
     openChest(big) {
         const n = big ? 3 : (Math.random() < 0.25 ? 3 : 1);
         const items = this.rollOptions(n);
+        // 화면에 보여줄 "Lv 4 → 5" 같은 글은 적용하기 전에 미리 만들어 둔다
+        // (적용한 뒤에 만들면 "Lv 5 → 6"처럼 최대 단계를 넘은 것처럼 보였다)
+        const infos = items.map(o => svOptionInfo(this, o));
         for (const o of items) this.applyOption(o);
-        this.ui = { kind: "chest", items, openedAt: performance.now(), big };
+        this.ui = { kind: "chest", items, infos, openedAt: performance.now(), big };
         Sound.play("pickup", { vol: 0.7 }); Sound.play("clear", { vol: 0.5 });
         Input.releaseJoystick();
     }
@@ -942,10 +1002,10 @@ class SurvivalGame {
             } else this.quizNext();
         } else if (u.kind === "pick") {
             const rects = svPickRects(u.options.length);
-            rects.forEach((r, i) => { if (inRect(x, y, r, 6)) this.pickSelect(i); });
+            for (let i = 0; i < rects.length; i++) if (inRect(x, y, rects[i], 6)) { this.pickSelect(i); break; }
         } else if (u.kind === "chest") {
-            if (performance.now() - u.openedAt > 700) this.ui = null;
-        }
+            if (performance.now() - u.openedAt > 700) this.closeUi();
+        } else if (u.kind === "evo") this.confirmEvo();
     }
     onKey(code) {
         if (code === "Escape" || code === "KeyP") { if (!this.over) this.setPaused(!this.paused); return; }
@@ -961,7 +1021,8 @@ class SurvivalGame {
             } else if (enter) this.quizNext();
         } else if (u.kind === "pick") {
             if (/^Digit[1-4]$/.test(code)) this.pickSelect(Number(code.slice(5)) - 1);
-        } else if (u.kind === "chest" && enter) { if (performance.now() - u.openedAt > 700) this.ui = null; }
+        } else if (u.kind === "chest" && enter) { if (performance.now() - u.openedAt > 700) this.closeUi(); }
+        else if (u.kind === "evo" && enter) this.confirmEvo();
     }
     setPaused(v) { if (this.over) return; this.paused = v; Input.releaseJoystick(); if (this.onPauseChange) this.onPauseChange(v); }
 
@@ -983,7 +1044,10 @@ function svPickRects(n) {
 function svOptionInfo(g, o) {
     if (o.type === "weapon") {
         const d = SV_WEAPONS[o.id], w = g.weapon(o.id), lv = w ? w.lv + 1 : 1;
-        return { title: d.name, tag: w ? `Lv ${w.lv} → ${lv}` : "NEW 무기!", desc: d.desc(lv), color: d.color, icon: d.icon, isNew: !w };
+        const pid = SV_PAIR[o.id], plv = g.pl(pid), pmax = svPassiveMax(pid);
+        const ready = lv >= SV_WEAPON_MAX && plv >= pmax;
+        return { title: d.name, tag: w ? `Lv ${w.lv} → ${lv}` : "NEW 무기!", desc: d.desc(lv), color: d.color, icon: d.icon, isNew: !w,
+                 pair: ready ? "★ 고르면 각성!" : `짝: ${SV_PASSIVES[pid].name} Lv${plv}/${pmax}`, pairReady: ready };
     }
     if (o.type === "evo") {
         const d = SV_WEAPONS[o.id];
@@ -991,7 +1055,11 @@ function svOptionInfo(g, o) {
     }
     if (o.type === "passive") {
         const d = SV_PASSIVES[o.id], lv = g.pl(o.id) + 1;
-        return { title: d.name, tag: lv === 1 ? "NEW 능력!" : `Lv ${lv - 1} → ${lv}`, desc: d.desc, color: d.color, letter: d.tag, isNew: lv === 1 };
+        const wid = Object.keys(SV_PAIR).find(k => SV_PAIR[k] === o.id), w = wid && g.weapon(wid);
+        const ready = !!w && !w.evo && w.lv >= SV_WEAPON_MAX && lv >= svPassiveMax(o.id);
+        const pair = !wid ? "" : ready ? "★ 고르면 각성!" : `짝: ${SV_WEAPONS[wid].name}` + (w ? (w.evo ? " (각성함)" : ` Lv${w.lv}/${SV_WEAPON_MAX}`) : "");
+        return { title: d.name, tag: lv === 1 ? "NEW 능력!" : `Lv ${lv - 1} → ${lv}`, desc: d.descLv ? d.descLv(lv) : d.desc, color: d.color, letter: d.tag, isNew: lv === 1,
+                 pair, pairReady: ready };
     }
     if (o.type === "heal") return { title: "고기", tag: "회복", desc: "체력 40 회복", color: [255, 140, 140], letter: "♥" };
     return { title: "보너스 점수", tag: "+300점", desc: "점수 300점", color: [255, 220, 120], letter: "$" };
@@ -1010,18 +1078,19 @@ function svDrawPick(ctx, g, u, now, touch) {
     R.text(ctx, title, SCREEN_W / 2, 146, 18, u.correct ? [170, 255, 180] : [255, 160, 150], { align: "center", bold: true });
     const rects = svPickRects(u.options.length);
     u.options.forEach((o, i) => {
-        const [x, y, w, h] = rects[i], info = svOptionInfo(g, o);
+        const [x, y, w, h] = rects[i], info = (u.infos && u.infos[i]) || svOptionInfo(g, o);
         const pop = Math.min(1, (performance.now() - u.openedAt - i * 70) / 180);
         if (pop <= 0) return;
         ctx.save(); ctx.globalAlpha = pop; ctx.translate(x + w / 2, y + h / 2); ctx.scale(0.85 + 0.15 * pop, 0.85 + 0.15 * pop); ctx.translate(-(x + w / 2), -(y + h / 2));
-        if (info.evo) drawGlow(ctx, x + w / 2, y + h / 2, w * 0.8, [255, 200, 80], 0.5 + 0.2 * Math.sin(now / 150));
+        if (info.evo || info.pairReady) drawGlow(ctx, x + w / 2, y + h / 2, w * 0.8, [255, 200, 80], 0.5 + 0.2 * Math.sin(now / 150));
         R.rect(ctx, x, y, w, h, [26, 26, 40], 0, 14);
         R.rect(ctx, x + 1.5, y + 1.5, w - 3, h - 3, info.evo ? [255, 215, 90] : info.color, info.evo ? 4 : 2, 14);
         svDrawIcon(ctx, info, x + w / 2, y + 74, 84, now);
         R.text(ctx, info.tag, x + w / 2, y + 128, 15, info.isNew ? [130, 255, 170] : info.evo ? [255, 215, 90] : [200, 200, 220], { align: "center", bold: true });
         R.text(ctx, info.title, x + w / 2, y + 154, 22, [255, 255, 255], { align: "center", bold: true });
         const lines = wrapTextLines(ctx, info.desc, w - 28, 15);
-        lines.slice(0, 4).forEach((l, k) => R.text(ctx, l, x + w / 2, y + 196 + k * 22, 15, [215, 215, 230], { align: "center" }));
+        lines.slice(0, info.pair ? 2 : 4).forEach((l, k) => R.text(ctx, l, x + w / 2, y + 190 + k * 22, 15, [215, 215, 230], { align: "center" }));
+        if (info.pair) R.text(ctx, info.pair, x + w / 2, y + h - 56, info.pairReady ? 14 : 12, info.pairReady ? [255, 215, 90] : [190, 175, 130], { align: "center", bold: info.pairReady });
         R.text(ctx, touch ? "누르면 선택" : `${i + 1}번 키 / 클릭`, x + w / 2, y + h - 30, 12, [140, 140, 165], { align: "center" });
         ctx.restore();
     });
@@ -1039,7 +1108,7 @@ function svDrawChest(ctx, g, u, now) {
     u.items.forEach((o, i) => {
         const show = t - 0.25 - i * 0.35;
         if (show < 0) return;
-        const k = Math.min(1, show / 0.2), info = svOptionInfo(g, o), x = x0 + i * (W + gap), y = 300;
+        const k = Math.min(1, show / 0.2), info = (u.infos && u.infos[i]) || svOptionInfo(g, o), x = x0 + i * (W + gap), y = 300;
         ctx.save(); ctx.globalAlpha = k;
         R.rect(ctx, x, y, W, 200, [30, 28, 40], 0, 12); R.rect(ctx, x + 1, y + 1, W - 2, 198, info.color, 2, 12);
         svDrawIcon(ctx, info, x + W / 2, y + 60, 70, now);
@@ -1049,6 +1118,26 @@ function svDrawChest(ctx, g, u, now) {
         ctx.restore();
     });
     if (t > 0.7) R.text(ctx, "화면을 누르면 계속", SCREEN_W / 2, SCREEN_H - 70, 15, [180, 200, 220], { align: "center" });
+}
+function svDrawEvo(ctx, g, u, now, touch) {
+    const t = (performance.now() - u.openedAt) / 1000, d = SV_WEAPONS[u.id], pd = SV_PASSIVES[SV_PAIR[u.id]];
+    ctx.fillStyle = "rgba(10,6,0,0.84)"; ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    const cy = 250;
+    ctx.save(); ctx.translate(SCREEN_W / 2, cy); ctx.rotate(t * 0.6);
+    for (let i = 0; i < 16; i++) { ctx.rotate(Math.PI / 8); ctx.fillStyle = `rgba(255,210,90,${0.07 + 0.05 * (i % 2)})`; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-36, -480); ctx.lineTo(36, -480); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+    drawGlow(ctx, SCREEN_W / 2, cy, 170 + 20 * Math.sin(now / 160), [255, 200, 80], 0.75);
+    const k = Math.min(1, t / 0.35);
+    R.text(ctx, "★ 각성 ★", SCREEN_W / 2, 64, 42, [255, 220, 110], { align: "center", bold: true, shadow: true });
+    R.text(ctx, `${d.name} Lv${SV_WEAPON_MAX}  +  ${pd.name} Lv${svPassiveMax(SV_PAIR[u.id])}`, SCREEN_W / 2, 118, 18, [230, 220, 190], { align: "center", bold: true });
+    ctx.save(); ctx.translate(SCREEN_W / 2, cy); ctx.scale(0.5 + 0.5 * k, 0.5 + 0.5 * k); ctx.translate(-SCREEN_W / 2, -cy);
+    svDrawIcon(ctx, { color: [255, 215, 90], icon: d.icon, evo: true, letter: "★" }, SCREEN_W / 2, cy, 130, now);
+    ctx.restore();
+    if (t > 0.3) {
+        R.text(ctx, SV_EVO_NAME[u.id], SCREEN_W / 2, 336, 34, [255, 255, 255], { align: "center", bold: true, shadow: true });
+        R.text(ctx, SV_EVO_DESC[u.id] || "", SCREEN_W / 2, 386, 17, [255, 230, 170], { align: "center" });
+    }
+    if (t > 0.9) R.text(ctx, touch ? "화면을 누르면 각성!" : "Enter / 클릭으로 각성!", SCREEN_W / 2, SCREEN_H - 80, 18, [255, 225, 130], { align: "center", bold: true });
 }
 function svDrawQuiz(ctx, g, q, now, touch) {
     ctx.fillStyle = "rgba(8,8,16,0.86)"; ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
@@ -1309,6 +1398,7 @@ function svDraw(ctx, g, now, touch) {
         if (g.ui.kind === "quiz") svDrawQuiz(ctx, g, g.ui, now, touch);
         else if (g.ui.kind === "pick") svDrawPick(ctx, g, g.ui, now, touch);
         else if (g.ui.kind === "chest") svDrawChest(ctx, g, g.ui, now);
+        else if (g.ui.kind === "evo") svDrawEvo(ctx, g, g.ui, now, touch);
     }
 }
 function svDrawHud(ctx, g, now) {
