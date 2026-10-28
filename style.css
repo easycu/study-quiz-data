@@ -162,3 +162,39 @@ button.stars { background: #4a3470; border-color: #c8a0ff; }
   .node button { min-width: 52px; min-height: 34px; padding: 4px 6px; font-size: 13px; }
   .panel { padding: 12px 14px; }
 }
+/* ---- 별 지도 ---- */
+.starpanel { gap: 8px; }
+.starhead { display: flex; align-items: baseline; gap: 14px; justify-content: center; width: 100%; }
+.starhead h2 { margin: 0; }
+.constabs { display: flex; gap: 6px; width: 100%; overflow-x: auto; flex-shrink: 0; padding-bottom: 2px; }
+.constabs .ctab { min-width: 0; flex: 1 0 auto; padding: 6px 10px; min-height: 0; font-size: 14px; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  border-color: var(--c); background: #22223a; margin: 0; }
+.constabs .ctab small { font-size: 11px; opacity: 0.8; }
+.constabs .ctab.on { background: var(--c); color: #111; font-weight: bold; }
+.starbody { display: flex; gap: 12px; width: 100%; align-items: stretch; flex-shrink: 0; }
+#starMap { flex: 1 1 60%; width: 100%; max-height: 52vh; min-height: 260px; border-radius: 10px; font-family: inherit; }
+#starMap text { font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; pointer-events: none; }
+.starinfo { flex: 1 1 40%; min-width: 180px; background: #23233a; border-radius: 10px; padding: 10px 12px; text-align: left; font-size: 14px; line-height: 1.5; }
+.starinfo h3 { margin: 2px 0 4px; }
+.starinfo .lv { color: #ffd27a; letter-spacing: 1px; }
+.starinfo button { min-width: 0; width: 100%; margin-top: 6px; }
+.stones { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; width: 100%; flex-shrink: 0; }
+.stones .stone { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; border-color: var(--c); background: #23233a; padding: 10px; }
+.stones .stone .si { font-size: 26px; }
+.stones .stone small { font-size: 12px; opacity: 0.9; line-height: 1.4; }
+.stones .stone.cur { box-shadow: 0 0 12px -2px var(--c); }
+.stones .stone.locked { opacity: 0.45; }
+@media (max-height: 560px), (max-width: 760px) {
+  .starbody { flex-direction: row; }
+  #starMap { max-height: 58vh; min-height: 200px; }
+  .starinfo { font-size: 12px; min-width: 150px; }
+  .stones { grid-template-columns: repeat(3, 1fr); }
+  .stones .stone { padding: 6px; }
+}
+@media (max-height: 560px) {
+  .starhead h2 { font-size: 18px; }
+  .constabs .ctab { padding: 3px 6px; font-size: 12px; }
+  #starMap { max-height: 46vh; min-height: 170px; }
+  .starinfo { padding: 6px 8px; }
+  .starinfo h3 { font-size: 14px; }
+}

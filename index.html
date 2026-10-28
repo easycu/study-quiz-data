@@ -12,7 +12,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
-<link rel="stylesheet" href="style.css?v=20261021c">
+<link rel="stylesheet" href="style.css?v=20261028c">
 <title>STUDY ROGUELIKE</title>
 </head>
 <body>
@@ -88,7 +88,7 @@
     <p id="settingsMsg" class="status"></p>
     <div class="scroll"><table id="gunTable" class="settings"></table></div>
     <p class="hint">값은 PC의 문제 편집기에서 '총 설정'을 바꾸고 '깃허브에 올리기'를 누르면 바뀝니다.<br>
-      그다음 메뉴의 '문제 새로 받기'를 누르면 이 기기에도 바로 적용됩니다. (숫자는 %, 바람만 관통 마릿수)</p>
+      그다음 메뉴의 '문제 새로 받기'를 누르면 이 기기에도 바로 적용됩니다. (숫자는 모두 %)</p>
     <div class="row"><button class="back">닫기</button></div>
   </div>
 </div>
@@ -122,16 +122,30 @@
   </div>
 </div>
 
-<!-- 꿈의 별자리 -->
+<!-- 꿈의 별자리 (별 지도) -->
 <div id="stars" class="overlay hidden">
-  <div class="panel wide xwide">
-    <h2>✦ 꿈의 별자리</h2>
-    <p class="status"><b id="dustNow">0</b> 꿈가루 · 위에서부터 차례로 밝힐 수 있어요</p>
-    <div id="consList" class="cons"></div>
+  <div class="panel wide xwide starpanel">
+    <div class="starhead"><h2>✦ 꿈의 별자리</h2><span class="status"><b id="dustNow">0</b> 꿈가루</span></div>
+    <div id="consTabs" class="constabs"></div>
+    <div class="starbody">
+      <svg id="starMap" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="starInfo" class="starinfo"></div>
+    </div>
+    <p id="starsNote" class="hint"></p>
     <div class="row">
-      <button id="btnStarsReset">초기화 (꿈가루 모두 돌려받기)</button>
+      <button id="btnStarsReset">초기화</button>
       <button class="back">닫기</button>
     </div>
+  </div>
+</div>
+
+<!-- 수호석 고르기 -->
+<div id="stoneSelect" class="overlay hidden">
+  <div class="panel wide">
+    <h2>🗿 수호석을 고르세요</h2>
+    <p class="hint">이번 판에만 적용돼요. 별자리 끝별과 엔딩으로 새 수호석이 열려요.</p>
+    <div id="stoneList" class="stones"></div>
+    <button class="back">돌아가기</button>
   </div>
 </div>
 
@@ -169,22 +183,23 @@
 <!-- 세로 화면 안내 -->
 <div id="rotateHint" class="hidden">휴대폰을 <b>가로</b>로 돌리면 더 크게 보여요</div>
 
-<script src="js/config.js?v=20261021c"></script>
-<script src="js/data.js?v=20261021c"></script>
-<script src="js/meta.js?v=20261021c"></script>
-<script src="js/assets_meta.js?v=20261021c"></script>
-<script src="js/world.js?v=20261021c"></script>
-<script src="js/combat.js?v=20261021c"></script>
-<script src="js/bosses.js?v=20261021c"></script>
-<script src="js/skills.js?v=20261021c"></script>
-<script src="js/cards.js?v=20261021c"></script>
-<script src="js/rooms.js?v=20261021c"></script>
-<script src="js/gfx.js?v=20261021c"></script>
-<script src="js/audio.js?v=20261021c"></script>
-<script src="js/render.js?v=20261021c"></script>
-<script src="js/input.js?v=20261021c"></script>
-<script src="js/zoom.js?v=20261021c"></script>
-<script src="js/game.js?v=20261021c"></script>
-<script src="js/main.js?v=20261021c"></script>
+<script src="js/config.js?v=20261028c"></script>
+<script src="js/data.js?v=20261028c"></script>
+<script src="js/meta.js?v=20261028c"></script>
+<script src="js/assets_meta.js?v=20261028c"></script>
+<script src="js/world.js?v=20261028c"></script>
+<script src="js/combat.js?v=20261028c"></script>
+<script src="js/bosses.js?v=20261028c"></script>
+<script src="js/skills.js?v=20261028c"></script>
+<script src="js/dash.js?v=20261028c"></script>
+<script src="js/cards.js?v=20261028c"></script>
+<script src="js/rooms.js?v=20261028c"></script>
+<script src="js/gfx.js?v=20261028c"></script>
+<script src="js/audio.js?v=20261028c"></script>
+<script src="js/render.js?v=20261028c"></script>
+<script src="js/input.js?v=20261028c"></script>
+<script src="js/zoom.js?v=20261028c"></script>
+<script src="js/game.js?v=20261028c"></script>
+<script src="js/main.js?v=20261028c"></script>
 </body>
 </html>
